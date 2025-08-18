@@ -1,0 +1,168 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* Bootstrap compatibility */
+  --bs-body-bg: #f8f9fa;
+  --bs-light: #f8f9fa;
+  
+  /* Custom color palette */
+  --color-purple: #6549b9;
+  --color-teal: #20c997;
+  --color-orange: #fd7e14;
+  --color-blue: #0d6efd;
+  
+  /* Theme variables */
+  --background: #ffffff;
+  --foreground: #171717;
+}
+:root {
+  /* --font-poppins: 'Poppins', sans-serif; */
+}
+
+
+body {
+  /* font-family: var(--font-poppins); */
+}
+
+/* Smooth icon transition
+.nav-link .icon {
+  transition: transform 0.2s ease-in-out;
+}
+
+/* Fixed positioning for chevron 
+.nav-link .chevron-container {
+  width: 24px;
+  min-width: 24px;
+  display: flex;
+  justify-content: center;
+}
+  
+/* Custom Sidebar Colors 
+.navbar-light .nav-link {
+  color: #4a5568 !important; /* Medium gray 
+}
+
+.navbar-light .nav-link.active {
+  color: #6549b9 !important; /* Brand purple 
+}
+
+.navbar-light .nav-link:hover {
+  color: #2d3748 !important; /* Dark gray
+}
+
+/* Icon color overrides 
+.navbar-light .nav-link svg {
+  color: #4a5568 !important;
+}
+
+.navbar-light .nav-link.active svg {
+  color: #6549b9 !important;
+}
+
+/* Enhanced sidebar specific styling 
+.sidebar-light .nav-link {
+  color: #4a5568 !important;
+}
+
+.sidebar-light .nav-link.active {
+  color: #6549b9 !important;
+}
+
+.sidebar-light .nav-link:hover {
+  color: #2d3748 !important;
+}
+
+.sidebar-light .nav-link svg {
+  color: #4a5568 !important;
+}
+
+.sidebar-light .nav-link.active svg {
+  color: #6549b9 !important;
+} */
+
+/* Comment out dark mode preferences if not needed */
+/* If you need dark mode, uncomment and adjust as necessary */
+/*
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0a0a0a;
+    --foreground: #ffffff;
+  }
+  
+  .navbar-light {
+    background-color: #1a202c !important;
+    border-color: #2d3748 !important;
+  }
+  
+  .navbar-light .nav-link {
+    color: #a0aec0 !important;
+  }
+  
+  .navbar-light .nav-link.active {
+    color: #8b5cf6 !important;
+  }
+  
+  .navbar-light .nav-link:hover {
+    color: #e2e8f0 !important;
+  }
+  
+  .navbar-light .nav-link svg {
+    color: #a0aec0 !important;
+  }
+  
+  .navbar-light .nav-link.active svg {
+    color: #8b5cf6 !important;
+  }
+}
+*/
+
+/* Custom classes */
+.bg-purple { background-color: var(--color-purple) !important; }
+.bg-teal { background-color: var(--color-teal) !important; }
+.bg-orange { background-color: var(--color-orange) !important; }
+.bg-blue { background-color: var(--color-blue) !important; }
+
+.card {
+  @apply transition-transform duration-200 ease-in-out;
+}
+
+.card:hover {
+  /* @apply -translate-y-0.5; */
+}
+
+.btn-icon {
+  @apply w-10 h-10 flex items-center justify-center rounded-lg;
+}
+/* .custom-sidebar {
+  background-color: #ffffff !important; /* Force white background 
+} 
+
+/* .custom-sidebar .nav-link {
+  color: #000000 !important; /* Black text 
+}
+
+.custom-sidebar .nav-link:hover,
+.custom-sidebar .nav-link:focus {
+  color: #000000 !important; /* Maintain black on hover/focus 
+}
+
+.custom-sidebar .nav-link svg {
+  color: #000000 !important; /* Black icons 
+} */
+
+/* * {
+  font-family: var(--font-poppins) !important;
+} */
+
+/* Base styles */
+@layer base {
+  body {
+    @apply bg-[var(--background)] text-[var(--foreground)] font-sans;
+  }
+}
+/* Add to your global CSS */
+a:hover {
+  text-decoration: none !important;
+}
