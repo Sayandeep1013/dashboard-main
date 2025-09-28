@@ -12,11 +12,11 @@ export default function LoginPage() {
     e.preventDefault()
 
     try {
-      const res = await fetch('https://152.42.239.141:5000/api/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
-      })
+      const res = await fetch('http://admin-api.life-lab.org/api/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password }),
+    })
 
       const data = await res.json()
 
