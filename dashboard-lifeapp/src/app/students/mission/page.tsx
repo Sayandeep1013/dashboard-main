@@ -80,6 +80,46 @@ const tableStyles = `
     .smooth-scroll {
       scroll-behavior: smooth;
     }
+
+    /* Feedback modal styles */
+    .feedback-modal {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0,0,0,0.5);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1060;
+    }
+    
+    .feedback-modal-content {
+      background: white;
+      padding: 24px;
+      border-radius: 8px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+      width: 90%;
+      max-width: 500px;
+    }
+    
+    .feedback-textarea {
+      width: 100%;
+      min-height: 120px;
+      padding: 12px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      resize: vertical;
+      font-family: inherit;
+    }
+    
+    .feedback-actions {
+      display: flex;
+      gap: 12px;
+      justify-content: flex-end;
+      margin-top: 16px;
+    }
   </style>
 `;
 
@@ -111,6 +151,16 @@ export default function MissionPage() {
     message: "",
   });
 
+  // State for feedback modal
+  const [feedbackModal, setFeedbackModal] = useState({
+    show: false,
+    type: "", // "approve" or "reject"
+    rowId: "",
+    missionId: "",
+    studentId: "",
+    feedbackText: "",
+  });
+
   // Refs for table scrolling functionality
   const tableContainerRef = useRef<HTMLDivElement>(null);
   const [showLeftHint, setShowLeftHint] = useState(false);
@@ -135,6 +185,7 @@ export default function MissionPage() {
     try {
       const res = await fetch(`${api_startpoint}/api/student_mission_search`, {
         method: "POST",
+        credentials: 'include', 
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(filters),
       });
@@ -272,12 +323,27 @@ export default function MissionPage() {
     }
   };
 
-  const handleStatusUpdate = async (
+  // Open feedback modal when approve/reject is clicked
+  const handleStatusActionClick = (
     rowId: string,
     missionId: string,
     studentId: string,
     action: "approve" | "reject"
   ) => {
+    setFeedbackModal({
+      show: true,
+      type: action,
+      rowId: rowId,
+      missionId: missionId,
+      studentId: studentId,
+      feedbackText: "",
+    });
+  };
+
+  // Handle feedback submission and status update
+  const handleStatusUpdate = async () => {
+    const { rowId, missionId, studentId, type, feedbackText } = feedbackModal;
+
     try {
       const response = await fetch(
         `${api_startpoint}/api/update_mission_status`,
@@ -288,24 +354,35 @@ export default function MissionPage() {
             row_id: rowId,
             mission_id: missionId,
             student_id: studentId,
-            action: action,
+            action: type,
+            comments: feedbackText,
           }),
         }
       );
 
       if (!response.ok) throw new Error("Update failed");
 
+      // Close feedback modal
+      setFeedbackModal({
+        show: false,
+        type: "",
+        rowId: "",
+        missionId: "",
+        studentId: "",
+        feedbackText: "",
+      });
+
       // Show confirmation modal
       setConfirmationModal({
         show: true,
-        type: action,
+        type: type,
         message: `Mission has been ${
-          action === "approve" ? "approved" : "rejected"
+          type === "approve" ? "approved" : "rejected"
         } successfully!`,
       });
 
       // Refresh the table data after successful update
-      handleSearch(0);
+      handleSearch(currentPage);
     } catch (error) {
       console.error("Error updating status:", error);
       alert("Failed to update status. Please try again.");
@@ -522,6 +599,7 @@ export default function MissionPage() {
                             <th>Media</th>
                             <th>Assigned By</th>
                             <th>Status</th>
+                            <th>Feedback</th>
                             {selectedMissionAcceptance === "Requested" && (
                               <th>Action</th>
                             )}
@@ -583,6 +661,19 @@ export default function MissionPage() {
                                 </td>
                                 <td>{row.Assigned_By}</td>
                                 <td>{row.Status}</td>
+                                <td>
+                                  {row.Comments ? (
+                                    <span title={row.Comments}>
+                                      {row.Comments.length > 50 
+                                        ? `${row.Comments.substring(0, 50)}...` 
+                                        : row.Comments}
+                                    </span>
+                                  ) : row.Status === "Requested" ? (
+                                    <span className="text-muted">No feedback</span>
+                                  ) : (
+                                    <span className="text-muted">—</span>
+                                  )}
+                                </td>
                                 {selectedMissionAcceptance === "Requested" && (
                                   <td>
                                     {row.Status === "Requested" && (
@@ -590,7 +681,7 @@ export default function MissionPage() {
                                         <button
                                           className="btn btn-sm btn-success"
                                           onClick={() =>
-                                            handleStatusUpdate(
+                                            handleStatusActionClick(
                                               row.Row_ID,
                                               row.Mission_ID,
                                               row.Student_ID,
@@ -603,7 +694,7 @@ export default function MissionPage() {
                                         <button
                                           className="btn btn-sm btn-danger"
                                           onClick={() =>
-                                            handleStatusUpdate(
+                                            handleStatusActionClick(
                                               row.Row_ID,
                                               row.Mission_ID,
                                               row.Student_ID,
@@ -700,7 +791,54 @@ export default function MissionPage() {
                 </div>
               )}
 
-              {/* NEW: Simplified Confirmation Modal */}
+              {/* Feedback Modal */}
+              {feedbackModal.show && (
+                <div className="feedback-modal">
+                  <div className="feedback-modal-content">
+                    <h4 className="mb-3">
+                      {feedbackModal.type === "approve" 
+                        ? "Approve Mission" 
+                        : "Reject Mission"}
+                    </h4>
+                    <p className="text-muted mb-3">
+                      Please provide feedback for this mission:
+                    </p>
+                    <textarea
+                      className="feedback-textarea"
+                      placeholder="Enter your feedback here..."
+                      value={feedbackModal.feedbackText}
+                      onChange={(e) =>
+                        setFeedbackModal({
+                          ...feedbackModal,
+                          feedbackText: e.target.value,
+                        })
+                      }
+                    />
+                    <div className="feedback-actions">
+                      <button
+                        className="btn btn-secondary"
+                        onClick={() =>
+                          setFeedbackModal({
+                            ...feedbackModal,
+                            show: false,
+                          })
+                        }
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        className="btn btn-primary"
+                        onClick={handleStatusUpdate}
+                        disabled={!feedbackModal.feedbackText.trim()}
+                      >
+                        Okay
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Confirmation Modal */}
               {confirmationModal.show && (
                 <div
                   className="position-fixed start-0 end-0 top-0 bottom-0 d-flex align-items-center justify-content-center"

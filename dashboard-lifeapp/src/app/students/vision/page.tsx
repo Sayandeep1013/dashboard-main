@@ -84,6 +84,7 @@ interface SessionRow {
   media_url?: string;
   user_id?: number;
   representative_answer_id?: number;
+  comment?: string; // Added comment field
 }
 interface VisionDetails {
   vision_id: number;
@@ -146,6 +147,21 @@ export default function VisionSessionsPage() {
     visionTitle: "",
     userName: "",
   });
+  
+// New state for feedback modal
+const [feedbackModal, setFeedbackModal] = useState<{
+  show: boolean;
+  answerId: number | null;
+  action: "approve" | "reject" | "";
+  comment: string;
+  loading: boolean;
+}>({
+  show: false,
+  answerId: null,
+  action: "",
+  comment: "",
+  loading: false,
+});
 
   // Refs for table scrolling functionality
   const tableContainerRef = useRef<HTMLDivElement>(null);
@@ -320,6 +336,90 @@ export default function VisionSessionsPage() {
       userName: "",
     });
   };
+  
+  // New functions for feedback modal
+  const openFeedbackModal = (answerId: number, action: "approve" | "reject") => {
+    setFeedbackModal({
+      show: true,
+      answerId,
+      action,
+      comment: "",
+      loading: false,
+    });
+  };
+
+  const closeFeedbackModal = () => {
+    setFeedbackModal({
+      show: false,
+      answerId: null,
+      action: "",
+      comment: "",
+      loading: false,
+    });
+  };
+
+  const handleFeedbackSubmit = async () => {
+    if (!feedbackModal.answerId) return;
+    
+    setFeedbackModal(prev => ({ ...prev, loading: true }));
+    
+    try {
+      // Update status with comment
+      await fetch(
+        `${api_startpoint}/api/vision_sessions/${feedbackModal.answerId}/status`,
+        {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            status: feedbackModal.action === "approve" ? "approved" : "rejected",
+            comment: feedbackModal.comment,
+          }),
+        }
+      );
+      
+      // If approving, also update score for non-MCQ answers
+      if (feedbackModal.action === "approve") {
+        const row = rows.find(r => 
+          (r.answer_id === feedbackModal.answerId) || 
+          (r.representative_answer_id === feedbackModal.answerId)
+        );
+        
+        if (row && row.answer_type !== "mcq") {
+          await fetch(
+            `${api_startpoint}/api/vision_sessions/${feedbackModal.answerId}/score`,
+            {
+              method: "PUT",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({ score: 10 }), // Default score for approval
+            }
+          );
+        }
+      }
+      
+      // Refresh data
+      fetchSessions();
+      
+      // Show confirmation
+      setConfirmationModal({
+        show: true,
+        type: feedbackModal.action,
+        message: `Vision session ${feedbackModal.action === "approve" ? "approved" : "rejected"} successfully!`,
+      });
+      
+      // Close feedback modal
+      closeFeedbackModal();
+    } catch (error) {
+      console.error(`Error ${feedbackModal.action}ing session:`, error);
+      alert(`Failed to ${feedbackModal.action} session.`);
+    } finally {
+      setFeedbackModal(prev => ({ ...prev, loading: false }));
+    }
+  };
+
   const exportToCSV = () => {
     if (rows.length === 0) {
       alert("No data to export. Please perform a search first.");
@@ -544,6 +644,7 @@ export default function VisionSessionsPage() {
                         <th className="text-nowrap">Show Details</th>
                         <th className="text-nowrap">Total Points</th>
                         <th className="text-nowrap">Status</th>
+                        <th className="text-nowrap">Feedback</th> {/* New Feedback Column */}
                         {filterStatus === "requested" && (
                           <th className="text-nowrap">Actions</th>
                         )}
@@ -655,6 +756,27 @@ export default function VisionSessionsPage() {
                               {r.status}
                             </span>
                           </td>
+                          {/* New Feedback Column */}
+                          <td className="align-middle">
+                            {r.status === "requested" ? (
+                              <span className="text-muted">No feedback</span>
+                            ) : r.comment ? (
+                              <div 
+                                className="feedback-text"
+                                title={r.comment}
+                                style={{ 
+                                  maxWidth: "200px", 
+                                  overflow: "hidden",
+                                  textOverflow: "ellipsis",
+                                  whiteSpace: "nowrap"
+                                }}
+                              >
+                                {r.comment}
+                              </div>
+                            ) : (
+                              <span className="text-muted">No feedback</span>
+                            )}
+                          </td>
                           {filterStatus === "requested" && (
                             <td className="align-middle">
                               <div
@@ -663,86 +785,24 @@ export default function VisionSessionsPage() {
                               >
                                 <button
                                   className="btn btn-success"
-                                  onClick={async () => {
-                                    const targetId =
-                                      r.answer_id || r.representative_answer_id;
-                                    if (!targetId) return;
-                                    try {
-                                      await fetch(
-                                        `${api_startpoint}/api/vision_sessions/${targetId}/status`,
-                                        {
-                                          method: "PUT",
-                                          headers: {
-                                            "Content-Type": "application/json",
-                                          },
-                                          body: JSON.stringify({
-                                            status: "approved",
-                                          }),
-                                        }
-                                      );
-                                      await fetch(
-                                        `${api_startpoint}/api/vision_sessions/${targetId}/score`,
-                                        {
-                                          method: "PUT",
-                                          headers: {
-                                            "Content-Type": "application/json",
-                                          },
-                                          body: JSON.stringify({ points: 10 }),
-                                        }
-                                      );
-                                      fetchSessions();
-                                      setConfirmationModal({
-                                        show: true,
-                                        type: "approve",
-                                        message:
-                                          "Vision session approved successfully!",
-                                      });
-                                    } catch (error) {
-                                      console.error(
-                                        "Error approving session:",
-                                        error
-                                      );
-                                      alert("Failed to approve session.");
-                                    }
-                                  }}
+                                  onClick={() => 
+                                    openFeedbackModal(
+                                      r.answer_id || r.representative_answer_id!, 
+                                      "approve"
+                                    )
+                                  }
                                   disabled={r.answer_type === "mcq"}
                                 >
                                   Approve
                                 </button>
                                 <button
                                   className="btn btn-danger"
-                                  onClick={async () => {
-                                    const targetId =
-                                      r.answer_id || r.representative_answer_id;
-                                    if (!targetId) return;
-                                    try {
-                                      await fetch(
-                                        `${api_startpoint}/api/vision_sessions/${targetId}/status`,
-                                        {
-                                          method: "PUT",
-                                          headers: {
-                                            "Content-Type": "application/json",
-                                          },
-                                          body: JSON.stringify({
-                                            status: "rejected",
-                                          }),
-                                        }
-                                      );
-                                      fetchSessions();
-                                      setConfirmationModal({
-                                        show: true,
-                                        type: "reject",
-                                        message:
-                                          "Vision session rejected successfully!",
-                                      });
-                                    } catch (error) {
-                                      console.error(
-                                        "Error rejecting session:",
-                                        error
-                                      );
-                                      alert("Failed to reject session.");
-                                    }
-                                  }}
+                                  onClick={() => 
+                                    openFeedbackModal(
+                                      r.answer_id || r.representative_answer_id!, 
+                                      "reject"
+                                    )
+                                  }
                                   disabled={r.answer_type === "mcq"}
                                 >
                                   Reject
@@ -1182,11 +1242,88 @@ export default function VisionSessionsPage() {
                 </div>
               </div>
             )}
+            {/* Feedback Modal */}
+            {feedbackModal.show && (
+              <div
+                className="modal modal-blur fade show"
+                style={{ display: "block" }}
+                id="feedback-modal"
+                tabIndex={-1}
+                role="dialog"
+              >
+                <div
+                  className="modal-dialog modal-dialog-centered"
+                  role="document"
+                >
+                  <div className="modal-content">
+                    <div className="modal-header">
+                      <h5 className="modal-title">
+                        {feedbackModal.action === "approve" ? "Approve" : "Reject"} Mission
+                      </h5>
+                      <button
+                        type="button"
+                        className="btn-close"
+                        onClick={closeFeedbackModal}
+                        aria-label="Close"
+                      ></button>
+                    </div>
+                    <div className="modal-body">
+                      <div className="mb-3">
+                        <label htmlFor="feedback-comment" className="form-label">
+                          Add Feedback (Optional)
+                        </label>
+                        <textarea
+                          id="feedback-comment"
+                          className="form-control"
+                          rows={4}
+                          placeholder="Enter your feedback comments..."
+                          value={feedbackModal.comment}
+                          onChange={(e) =>
+                            setFeedbackModal(prev => ({
+                              ...prev,
+                              comment: e.target.value
+                            }))
+                          }
+                        />
+                      </div>
+                    </div>
+                    <div className="modal-footer">
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        onClick={closeFeedbackModal}
+                        disabled={feedbackModal.loading}
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        className={`btn ${
+                          feedbackModal.action === "approve" ? "btn-success" : "btn-danger"
+                        }`}
+                        onClick={handleFeedbackSubmit}
+                        disabled={feedbackModal.loading}
+                      >
+                        {feedbackModal.loading ? (
+                          <>
+                            <span className="spinner-border spinner-border-sm me-2" role="status"></span>
+                            {feedbackModal.action === "approve" ? "Approving..." : "Rejecting..."}
+                          </>
+                        ) : (
+                          `Okay - ${feedbackModal.action === "approve" ? "Approve" : "Reject"}`
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
             {/* Backdrop for modals */}
             {(lightboxUrl ||
               confirmationModal.show ||
               visionDetailsModal.show ||
-              mcqAnswersModal.show) && (
+              mcqAnswersModal.show ||
+              feedbackModal.show) && (
               <div className="modal-backdrop fade show"></div>
             )}
           </div>

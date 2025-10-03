@@ -3452,27 +3452,29 @@ export default function StudentDashboard() {
                   value: totalStudents,
                   icon: <IconUser />,
                   color: "bg-purple",
+                  // suffix: "",
                 },
-                {
-                  title: "Active Students",
-                  value: 0,
-                  icon: <IconUserFilled />,
-                  color: "bg-teal",
-                },
-                {
-                  title: "Inactive Students",
-                  value: 0,
-                  icon: <IconUserExclamation />,
-                  color: "bg-orange",
-                  suffix: "",
-                },
-                {
-                  title: "Highest Online User Count",
-                  value: 0,
-                  icon: <IconUserScan />,
-                  color: "bg-blue",
-                  suffix: "",
-                },
+                // {
+                //   title: "Active Students",
+                //   value: 0,
+                //   icon: <IconUserFilled />,
+                //   color: "bg-teal",
+                // },
+                // {
+                //   title: "Inactive Students",
+                //   value: 0,
+                //   icon: <IconUserExclamation />,
+                //   color: "bg-orange",
+                //   suffix: "",
+                // },
+                // {
+                //   title: "Highest Online User Count",
+                //   value: 0,
+                //   icon: <IconUserScan />,
+                //   color: "bg-blue",
+                //   suffix: "",
+                // },
+
               ].map((metric, index) => (
                 <div className="col-sm-6 col-lg-3" key={index}>
                   <div className="card">
@@ -3486,7 +3488,7 @@ export default function StudentDashboard() {
                           <div className="h1 mb-3">
                             <NumberFlow
                               value={metric.value}
-                              suffix={metric.suffix || ""}
+                              // suffix={metric.suffix || ""}
                               className="fw-semi-bold text-dark"
                               transformTiming={{
                                 endDelay: 6,

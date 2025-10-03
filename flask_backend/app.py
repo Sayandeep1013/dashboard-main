@@ -6,7 +6,7 @@ import math
 import traceback
 import requests
 from flask import Flask, Response, json, jsonify, request, send_file
-from flask_cors import CORS
+from flask_cors import CORS, cross_origin
 import pymysql.cursors
 from datetime import datetime, timedelta, time, timezone
 from collections import defaultdict
@@ -29,28 +29,19 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
+
+# CORS(app, 
+#      origins=["http://localhost:3000", "https://admin.life-lab.org", "https://admin-api.life-lab.org"],
+#      methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+#      allow_headers=["Content-Type", "Authorization"],
+#      supports_credentials=True,
+#      max_age=3600)
+
 # CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True)
-# CORS(app, resources={
-#     r"/*": {
-#         "origins": [
-#             "https://admin.life-lab.org",   
-#         ]
-#     }
-# })
-# changes done here 
+
+CORS(app, resources={r"/*": {"origins": ["https://admin.life-lab.org"]}}, supports_credentials=True)
 
 
-# ----------------------------------------------
-# CORS – allow the IP you are testing from
-# ----------------------------------------------
-# CORS(app,
-#      origins=["http://152.42.239.141:3000",      # front-end IP+port
-#               "https://admin.life-lab.org"],     # ready for future domain
-#      supports_credentials=True)
-# Configure CORS to allow requests from http://localhost:3000 with credentials
-
-
-CORS(app, resources={r"/*": {"origins":"*"}}, supports_credentials=True)
 
 # Load environment variables
 env_path = Path(__file__).resolve().parent / ".local.env"
@@ -5214,7 +5205,8 @@ def mission_search():
                 u.heart_coins,
                 u.brain_coins,
                 mc.media_id,
-                mia.path AS media_path
+                mia.path AS media_path,
+                mc.comments AS Comments  -- NEW: Include comments column
             FROM lifeapp.la_mission_completes mc
             JOIN lifeapp.users u ON mc.user_id = u.id
             JOIN lifeapp.la_missions m 
@@ -5312,13 +5304,15 @@ def mission_search():
 
 @app.route('/api/update_mission_status', methods=['POST'])
 def update_mission_status():
+
     data = request.get_json()
     row_id = data.get('row_id')
     mission_id = data.get('mission_id')
     student_id = data.get('student_id')
     action = data.get('action')
+    comments = data.get('comments', '')  # NEW: Get comments from request
 
-    print(f"Received mission status update: row_id={row_id}, mission_id={mission_id}, student_id={student_id}, action={action}")
+    print(f"Received mission status update: row_id={row_id}, mission_id={mission_id}, student_id={student_id}, action={action}, comments={comments}")
 
     if not all([row_id, student_id, action]):
         print("Missing parameters")
@@ -5330,13 +5324,13 @@ def update_mission_status():
             now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
             if action == 'approve':
-                # 1. Mark approved
-                print("Marking mission as approved...")
+                # 1. Mark approved and update comments
+                print("Marking mission as approved and updating comments...")
                 cursor.execute("""
                     UPDATE la_mission_completes
-                    SET approved_at = %s, rejected_at = NULL
+                    SET approved_at = %s, rejected_at = NULL, comments = %s
                     WHERE id = %s AND user_id = %s
-                """, (now, row_id, student_id))
+                """, (now, comments, row_id, student_id))
 
                 # 2. Fetch mission details
                 cursor.execute("""
@@ -5461,12 +5455,13 @@ def update_mission_status():
                 notify_mission_status(mission_id, student_id, 'approved')
 
             elif action == 'reject':
-                print("Marking mission as rejected...")
+                # NEW: Update comments when rejecting
+                print("Marking mission as rejected and updating comments...")
                 cursor.execute("""
                     UPDATE la_mission_completes
-                    SET rejected_at = %s, approved_at = NULL
+                    SET rejected_at = %s, approved_at = NULL, comments = %s
                     WHERE id = %s AND user_id = %s
-                """, (now, row_id, student_id))
+                """, (now, comments, row_id, student_id))
 
                 # ---- NEW: send push notification ----
                 notify_mission_status(mission_id, student_id, 'rejected')
@@ -5543,7 +5538,8 @@ def fetch_vision_sessions():
       a.created_at,
       v.youtube_url  AS vision_youtube_url,
       NULL           AS user_id, -- Placeholder for MCQ grouping logic
-      NULL           AS representative_answer_id -- Placeholder for MCQ grouping logic
+      NULL           AS representative_answer_id, -- Placeholder for MCQ grouping logic
+      a.comment      AS comment -- Added comment field
     FROM vision_question_answers a
     JOIN visions v          ON v.id = a.vision_id
     JOIN vision_questions q ON q.id = a.question_id
@@ -5578,7 +5574,8 @@ def fetch_vision_sessions():
       MAX(a.created_at)  AS created_at, -- Use max for display and ordering
       v.youtube_url  AS vision_youtube_url,
       a.user_id      AS user_id, -- Needed for MCQ modal lookup
-      MAX(a.id)      AS representative_answer_id -- Use max ID for actions (status/score)
+      MAX(a.id)      AS representative_answer_id, -- Use max ID for actions (status/score)
+      MAX(a.comment) AS comment -- Get comment for MCQ group (use max or group concat if needed)
     FROM vision_question_answers a
     JOIN visions v ON v.id = a.vision_id
     JOIN users u ON u.id = a.user_id
@@ -5648,7 +5645,7 @@ def fetch_vision_sessions():
     # --- Combine and Finalize Query ---
     if not combined_sql_parts:
         # Handle case where both parts might be empty due to filters
-        final_sql = "SELECT NULL AS answer_id, NULL AS vision_id, NULL AS vision_title, NULL AS question_title, NULL AS user_name, NULL AS teacher_name, NULL AS answer_text, NULL AS answer_option, NULL AS media_id, NULL AS media_path, NULL AS score, NULL AS answer_type, NULL AS status, NULL AS approved_at, NULL AS rejected_at, NULL AS created_at, NULL AS vision_youtube_url, NULL AS user_id, NULL AS representative_answer_id FROM DUAL WHERE FALSE"
+        final_sql = "SELECT NULL AS answer_id, NULL AS vision_id, NULL AS vision_title, NULL AS question_title, NULL AS user_name, NULL AS teacher_name, NULL AS answer_text, NULL AS answer_option, NULL AS media_id, NULL AS media_path, NULL AS score, NULL AS answer_type, NULL AS status, NULL AS approved_at, NULL AS rejected_at, NULL AS created_at, NULL AS vision_youtube_url, NULL AS user_id, NULL AS representative_answer_id, NULL AS comment FROM DUAL WHERE FALSE"
         final_params = []
     else:
         # Combine the parts with UNION ALL
@@ -5853,8 +5850,6 @@ def get_mcq_answers(vision_id, user_id):
         return jsonify({'error': str(e)}), 500
     finally:
         conn.close()
-
-
 
 
 @app.route('/api/vision_sessions/<int:answer_id>/score', methods=['PUT'])
@@ -6071,9 +6066,12 @@ def update_vision_session_score(answer_id):
 
 @app.route('/api/vision_sessions/<int:answer_id>/status', methods=['PUT'])
 def update_vision_session_status(answer_id):
+
     data = request.get_json() or {}
     new_status = data.get('status')
-    print(f"Received status update request for answer_id={answer_id}, new_status={new_status}")
+    comment = data.get('comment', '')  # Get comment from request, default to empty string
+    
+    print(f"Received status update request for answer_id={answer_id}, new_status={new_status}, comment={comment}")
 
     if new_status not in ('approved', 'rejected'):
         print(" Invalid status")
@@ -6099,18 +6097,18 @@ def update_vision_session_status(answer_id):
             vision_id = result['vision_id']
             print(f"Fetched: user_id={user_id}, vision_id={vision_id}")
 
-            # Update vision_question_answers
+            # Update vision_question_answers with comment
             if new_status == 'approved':
-                sql = "UPDATE vision_question_answers SET status=%s, approved_at=%s WHERE id=%s"
-                params = (new_status, now, answer_id)
+                sql = "UPDATE vision_question_answers SET status=%s, approved_at=%s, comment=%s, updated_at=%s WHERE id=%s"
+                params = (new_status, now, comment, now, answer_id)
                 vision_user_status = 'completed'
             else:  # rejected
-                sql = "UPDATE vision_question_answers SET status=%s, rejected_at=%s WHERE id=%s"
-                params = (new_status, now, answer_id)
+                sql = "UPDATE vision_question_answers SET status=%s, rejected_at=%s, comment=%s, updated_at=%s WHERE id=%s"
+                params = (new_status, now, comment, now, answer_id)
                 vision_user_status = 'rejected'
 
             cursor.execute(sql, params)
-            print(f" vision_question_answers updated for ID {answer_id}")
+            print(f" vision_question_answers updated for ID {answer_id} with comment")
 
             # Update vision_user_statuses
             status_sql = """
@@ -6133,7 +6131,8 @@ def update_vision_session_status(answer_id):
             return jsonify({
                 'success': True, 
                 'status': vision_user_status,
-                'notification_sent': notification_sent
+                'notification_sent': notification_sent,
+                'comment_saved': bool(comment)  # Return whether a comment was saved
             }), 200
 
     except Exception as e:
@@ -6141,9 +6140,9 @@ def update_vision_session_status(answer_id):
         return jsonify({'error': str(e)}), 500
     finally:
         conn.close()
-        print("🔚 Connection closed")
+        print("🔚 Connection closed")   
 
-
+        
 ###################################################################################
 ###################################################################################
 ######################## STUDENT/ QUIZ SESSIONS APIs ##############################
@@ -6524,6 +6523,24 @@ def get_game_questions_with_answers():
 ###################################################################################
 ###################################################################################
 
+@app.route('/api/teacher-count-dashboard', methods=['POST'])
+def get_teacher_count_dashboard():
+    try:
+        connection = get_db_connection()
+        with connection.cursor() as cursor:
+            sql = """
+                SELECT COUNT(*) AS total_count
+                FROM lifeapp.users
+                WHERE type = 5
+            """
+            cursor.execute(sql)
+            result = cursor.fetchone()
+        return jsonify([{"total_count": result["total_count"]}])
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    finally:
+        connection.close()
+        
 @app.route('/api/state_list_teachers', methods=['GET'])
 def get_state_list_teachers():
     connection = get_db_connection()
@@ -6535,14 +6552,11 @@ def get_state_list_teachers():
             """
             cursor.execute(sql)
             result = cursor.fetchall()
-            
-            # print("Query Result:", result)  # Debugging statement
         return jsonify(result)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
     finally:
         connection.close()
-
 
 @app.route('/api/city_list_teacher_dashboard', methods=['POST'])
 def get_city_list_teacher_dashboard():

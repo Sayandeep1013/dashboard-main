@@ -831,7 +831,7 @@ export default function TeachersDashboard() {
   useEffect(() => {
     async function fetchTeacherCount() {
       try {
-        const res = await fetch(`${api_startpoint}/api/teacher-count`, {
+        const res = await fetch(`${api_startpoint}/api/teacher-count-dashboard`, {
           method: "POST",
         });
         const data = await res.json();
@@ -1895,25 +1895,25 @@ export default function TeachersDashboard() {
                   icon: <IconUser />,
                   color: "bg-purple",
                 },
-                {
-                  title: "Active Teachers",
-                  value: 0,
-                  icon: <IconUserFilled />,
-                  color: "bg-teal",
-                },
-                {
-                  title: "Inactive Teachers",
-                  value: 0,
-                  icon: <IconUserExclamation />,
-                  color: "bg-orange",
-                },
-                {
-                  title: "Highest Online User Count",
-                  value: 0,
-                  icon: <IconUserScan />,
-                  color: "bg-blue",
-                  suffix: "",
-                },
+                // {
+                //   title: "Active Teachers",
+                //   value: 0,
+                //   icon: <IconUserFilled />,
+                //   color: "bg-teal",
+                // },
+                // {
+                //   title: "Inactive Teachers",
+                //   value: 0,
+                //   icon: <IconUserExclamation />,
+                //   color: "bg-orange",
+                // },
+                // {
+                //   title: "Highest Online User Count",
+                //   value: 0,
+                //   icon: <IconUserScan />,
+                //   color: "bg-blue",
+                //   suffix: "",
+                // },
                 {
                   title: "Total Number of Schools",
                   value: schoolCount,
