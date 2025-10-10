@@ -332,11 +332,11 @@ function SearchableDropdown({
   );
 }
 
-// const api_startpoint = "http://localhost:5000";
+const api_startpoint = "http://localhost:5000";
 // const api_startpoint = 'https://lifeapp-api-vv1.vercel.app'
 // const api_startpoint = "http://152.42.239.141:5000";
 // const api_startpoint = "http://152.42.239.141:5000";
-const api_startpoint = "https://admin-api.life-lab.org";
+// const api_startpoint = "https://admin-api.life-lab.org";
 
 
 export default function TeachersDashboard() {
@@ -868,7 +868,7 @@ export default function TeachersDashboard() {
 
         // Fetch state-wise student count from API
         const apiResponse = await fetch(
-          `${api_startpoint}/api/demograph-teachers`,
+          `${api_startpoint}/api/demograph-teachers-dashboard`,
           {
             method: "POST",
           }
@@ -999,7 +999,7 @@ export default function TeachersDashboard() {
   useEffect(() => {
     async function fetchSchoolCount() {
       try {
-        const res = await fetch(`${api_startpoint}/api/school_count`, {
+        const res = await fetch(`${api_startpoint}/api/school_count_dashboard`, {
           method: "POST",
         });
         const data = await res.json();
@@ -1675,7 +1675,7 @@ export default function TeachersDashboard() {
     async function fetchTmcAssignedByTeacher() {
       try {
         const res = await fetch(
-          `${api_startpoint}/api/total-missions-completed-assigned-by-teacher`,
+          `${api_startpoint}/api/total-missions-completed-assigned-by-teacher-dashboard`,
           {
             method: "POST",
           }
@@ -1686,7 +1686,7 @@ export default function TeachersDashboard() {
         }
       } catch (error) {
         console.error(
-          "Error fetching total-missions-completed-assigned-by-teacher:",
+          "Error fetching total-missions-completed-assigned-by-teacher-dashboard:",
           error
         );
       }

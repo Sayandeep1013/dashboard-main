@@ -103,11 +103,11 @@ import { Content, Inter } from "next/font/google";
 // import { headers } from 'next/headers';
 const inter = Inter({ subsets: ["latin"] });
 
-// const api_startpoint = "http://localhost:5000";
+const api_startpoint = "http://localhost:5000";
 // const api_startpoint = 'https://lifeapp-api-vv1.vercel.app'
 // const api_startpoint = "http://152.42.239.141:5000";
 // const api_startpoint = "http://152.42.239.141:5000";
-const api_startpoint = "https://admin-api.life-lab.org";
+// const api_startpoint = "https://admin-api.life-lab.org";
 
 interface userTypeChart {
   count: number;

@@ -5,7 +5,7 @@ import io
 import math
 import traceback
 import requests
-from flask import Flask, Response, json, jsonify, request, send_file
+from flask import Flask, Response, json, jsonify, request, send_file, current_app
 from flask_cors import CORS, cross_origin
 import pymysql.cursors
 from datetime import datetime, timedelta, time, timezone
@@ -37,9 +37,9 @@ app = Flask(__name__)
 #      supports_credentials=True,
 #      max_age=3600)
 
-# CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True)
+CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True)
 
-CORS(app, resources={r"/*": {"origins": ["https://admin.life-lab.org"]}}, supports_credentials=True)
+# CORS(app, resources={r"/*": {"origins": ["https://admin.life-lab.org"]}}, supports_credentials=True)
 
 
 
@@ -190,6 +190,7 @@ def upload_media(file):
 ######################## HOME DASHBOARD APIs ######################################
 ###################################################################################
 ###################################################################################
+
 
 def build_filter_conditions(request_args=None):
     """Build SQL WHERE conditions and parameters based on global filters"""
@@ -6523,24 +6524,66 @@ def get_game_questions_with_answers():
 ###################################################################################
 ###################################################################################
 
+def get_school_id_from_code(school_code, cursor):
+    """Get school ID from school code"""
+    if not school_code:
+        return None
+    
+    try:
+        # Handle both string and integer codes
+        codes = [school_code] if isinstance(school_code, (str, int)) else school_code
+        placeholders = ",".join(["%s"] * len(codes))
+        
+        cursor.execute(
+            f"SELECT id FROM lifeapp.schools WHERE code IN ({placeholders})",
+            codes
+        )
+        result = cursor.fetchall()
+        return [row['id'] for row in result] if result else None
+    except Exception as e:
+        logging.error(f"Error getting school ID from code: {e}")
+        return None
+
 @app.route('/api/teacher-count-dashboard', methods=['POST'])
 def get_teacher_count_dashboard():
+    connection = None                       # ➊ guarantee the name exists
     try:
         connection = get_db_connection()
         with connection.cursor() as cursor:
-            sql = """
-                SELECT COUNT(*) AS total_count
-                FROM lifeapp.users
-                WHERE type = 5
-            """
-            cursor.execute(sql)
-            result = cursor.fetchone()
-        return jsonify([{"total_count": result["total_count"]}])
+            cursor.execute(
+                "SELECT COUNT(*) AS total_count "
+                "FROM lifeapp.users WHERE type = 5"
+            )
+            row = cursor.fetchone()
+        return jsonify([{"total_count": row["total_count"]}])
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        current_app.logger.exception("teacher-count-dashboard")
+        return jsonify({"error": "internal error"}), 500
     finally:
-        connection.close()
-        
+        if connection:                      # ➋ close only if it was opened
+            connection.close()
+
+@app.route('/api/school_count_dashboard', methods=['POST'])
+def school_count_dashboard():
+    conn = None
+    try:
+        conn = get_db_connection()
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT COUNT(DISTINCT s.id) AS count "
+                "FROM lifeapp.schools s "
+                "JOIN lifeapp.users u ON u.school_id = s.id "
+                "WHERE u.type = 5"
+            )
+            row = cur.fetchone()
+        return jsonify([{"count": row["count"]}])
+    except Exception as e:
+        current_app.logger.exception("school_count_dashboard")
+        return jsonify({"error": "internal error"}), 500
+    finally:
+        if conn:
+            conn.close()
+
 @app.route('/api/state_list_teachers', methods=['GET'])
 def get_state_list_teachers():
     connection = get_db_connection()
@@ -6625,114 +6668,106 @@ def get_teacher_states():
 
 @app.route('/api/teacher_dashboard_search', methods=['POST'])
 def fetch_teacher_dashboard():
-    filters = request.get_json() or {}
-    state = filters.get('state')
-    city = filters.get('city')
-    is_life_lab = filters.get('is_life_lab')
-    school = filters.get('school')
-    from_date = filters.get('from_date')  # Starting date filter
-    to_date = filters.get('to_date')      # Ending date filter
-    # New filters for teacher subject and grade:
-    teacher_subject = filters.get('teacher_subject')
-    teacher_grade = filters.get('teacher_grade')
-    board = filters.get('board')
-    # Start with base SQL. We join to la_teacher_grades (ltg), la_grades (lgr), and la_sections (lsct)
-    sql = """
-        WITH mission_cte AS (
-            SELECT teacher_id, COUNT(DISTINCT user_id) as mission_assigned_count 
-            FROM lifeapp.la_mission_assigns 
-            GROUP BY teacher_id
-        ),
-        vision_cte AS (
-            SELECT teacher_id, COUNT(DISTINCT student_id) as vision_assigned_count 
-            FROM lifeapp.vision_assigns 
-            GROUP BY teacher_id
-        )
-        SELECT 
-            u.id, u.name, u.email,
-            u.mobile_no, u.state, 
-            u.city, ls.name as school_name, u.school_code, 
-            COALESCE(m.mission_assigned_count, 0) AS mission_assigned_count,
-            COALESCE(v.vision_assigned_count, 0) AS vision_assigned_count,
-            u.earn_coins,
-            CASE 
-                WHEN ls.is_life_lab = 1 THEN 'Yes' 
-                ELSE 'No' 
-            END AS is_life_lab,
-            u.created_at, u.updated_at,
-            las.title,
-            lgr.name as grade_name, 
-            lsct.name as section_name,
-            lab.name as board_name
-        FROM lifeapp.users u
-        INNER JOIN lifeapp.schools ls ON ls.id = u.school_id
-        LEFT JOIN mission_cte m ON m.teacher_id = u.id
-        LEFT JOIN vision_cte v ON v.teacher_id = u.id
-        LEFT JOIN lifeapp.la_teacher_grades ltg ON ltg.user_id = u.id
-        LEFT JOIN lifeapp.la_subjects las on las.id = ltg.la_subject_id
-        LEFT JOIN lifeapp.la_grades lgr ON ltg.la_grade_id = lgr.id
-        LEFT JOIN lifeapp.la_sections lsct ON ltg.la_section_id = lsct.id
-        LEFT JOIN lifeapp.la_boards lab on u.la_board_id = lab.id
-        WHERE u.type = 5
-    """
-    params = []
-    
-    if state and state.strip():
-        sql += " AND u.state = %s"
-        params.append(state)
-    # NEW: Add filter for School ID and Mobile No.
-    schoolCodes = filters.get('school_code')
-    if schoolCodes:
-        # 1. Make sure it’s a Python list
-        codes = schoolCodes if isinstance(schoolCodes, list) else [schoolCodes]
-
-        # 2. Create “%s,%s,…,%s” with one %s per code
-        placeholders = ",".join(["%s"] * len(codes))
-
-        # 3. Inject both IN‑lists into your SQL
-        sql += f"""
-        AND (
-            u.school_code IN ({placeholders})
-        
-        )
-        """
-        # OR u.school_id   IN ({placeholders})
-        # 4a. Bind for u.school_code → cast each code to int()
-        params.extend([int(c) for c in codes])
-
-        # 4b. Bind for u.school_id   → use the raw codes (or ints if your IDs are numeric)
-        # params.extend(codes)
-
-    if city and city.strip():
-        sql += " AND u.city = %s"
-        params.append(city)
-    if is_life_lab:
-        if is_life_lab == "Yes":
-            sql += " AND ls.is_life_lab = 1"
-        elif is_life_lab == "No":
-            sql += " AND ls.is_life_lab = 0"
-    if school:
-        sql += " AND ls.name = %s"
-        params.append(school)
-    if teacher_subject:
-        # Filter by teacher subject using la_teacher_grades table join.
-        sql += " AND ltg.la_subject_id = %s"
-        params.append(teacher_subject)
-    if teacher_grade:
-        # Filter by teacher grade using la_teacher_grades and la_grades join.
-        sql += " AND ltg.la_grade_id = %s"
-        params.append(int(teacher_grade))
-    if from_date:
-        sql += " AND u.created_at >= %s"
-        params.append(from_date)
-    if to_date:
-        sql += " AND u.created_at <= %s"
-        params.append(to_date)
-    if board and board.strip():
-        sql += " AND lab.id = %s"
-        params.append(board)
-    sql += " ORDER by u.id DESC"
+    connection = None
     try:
+        filters = request.get_json() or {}
+        state = filters.get('state')
+        city = filters.get('city')
+        is_life_lab = filters.get('is_life_lab')
+        school = filters.get('school')
+        from_date = filters.get('from_date')
+        to_date = filters.get('to_date')
+        teacher_subject = filters.get('teacher_subject')
+        teacher_grade = filters.get('teacher_grade')
+        board = filters.get('board')
+        
+        sql = """
+            WITH mission_cte AS (
+                SELECT teacher_id, COUNT(DISTINCT user_id) as mission_assigned_count 
+                FROM lifeapp.la_mission_assigns 
+                GROUP BY teacher_id
+            ),
+            vision_cte AS (
+                SELECT teacher_id, COUNT(DISTINCT student_id) as vision_assigned_count 
+                FROM lifeapp.vision_assigns 
+                GROUP BY teacher_id
+            )
+            SELECT 
+                u.id, u.name, u.email,
+                u.mobile_no, u.state, 
+                u.city, ls.name as school_name, u.school_code, 
+                COALESCE(m.mission_assigned_count, 0) AS mission_assigned_count,
+                COALESCE(v.vision_assigned_count, 0) AS vision_assigned_count,
+                u.earn_coins,
+                CASE 
+                    WHEN ls.is_life_lab = 1 THEN 'Yes' 
+                    ELSE 'No' 
+                END AS is_life_lab,
+                u.created_at, u.updated_at,
+                las.title,
+                lgr.name as grade_name, 
+                lsct.name as section_name,
+                lab.name as board_name
+            FROM lifeapp.users u
+            INNER JOIN lifeapp.schools ls ON ls.id = u.school_id
+            LEFT JOIN mission_cte m ON m.teacher_id = u.id
+            LEFT JOIN vision_cte v ON v.teacher_id = u.id
+            LEFT JOIN lifeapp.la_teacher_grades ltg ON ltg.user_id = u.id
+            LEFT JOIN lifeapp.la_subjects las on las.id = ltg.la_subject_id
+            LEFT JOIN lifeapp.la_grades lgr ON ltg.la_grade_id = lgr.id
+            LEFT JOIN lifeapp.la_sections lsct ON ltg.la_section_id = lsct.id
+            LEFT JOIN lifeapp.la_boards lab on u.la_board_id = lab.id
+            WHERE u.type = 5
+        """
+        params = []
+        
+        if state and state.strip():
+            sql += " AND u.state = %s"
+            params.append(state)
+        
+        # UPDATED: School code filtering now uses school ID
+        schoolCodes = filters.get('school_code')
+        if schoolCodes:
+            connection = get_db_connection()
+            with connection.cursor() as temp_cursor:
+                school_ids = get_school_id_from_code(schoolCodes, temp_cursor)
+            
+            if school_ids:
+                placeholders = ",".join(["%s"] * len(school_ids))
+                sql += f" AND u.school_id IN ({placeholders})"
+                params.extend(school_ids)
+            else:
+                # If no school found with given codes, return empty result
+                sql += " AND 1=0"
+
+        if city and city.strip():
+            sql += " AND u.city = %s"
+            params.append(city)
+        if is_life_lab:
+            if is_life_lab == "Yes":
+                sql += " AND ls.is_life_lab = 1"
+            elif is_life_lab == "No":
+                sql += " AND ls.is_life_lab = 0"
+        if school:
+            sql += " AND ls.name = %s"
+            params.append(school)
+        if teacher_subject:
+            sql += " AND ltg.la_subject_id = %s"
+            params.append(teacher_subject)
+        if teacher_grade:
+            sql += " AND ltg.la_grade_id = %s"
+            params.append(int(teacher_grade))
+        if from_date:
+            sql += " AND u.created_at >= %s"
+            params.append(from_date)
+        if to_date:
+            sql += " AND u.created_at <= %s"
+            params.append(to_date)
+        if board and board.strip():
+            sql += " AND lab.id = %s"
+            params.append(board)
+        sql += " ORDER by u.id DESC"
+        
         connection = get_db_connection()
         with connection.cursor() as cursor:
             cursor.execute(sql, tuple(params))
@@ -6742,7 +6777,8 @@ def fetch_teacher_dashboard():
         print("Error in teacher_dashboard_search:", str(e))
         return jsonify({'error': str(e)}), 500
     finally:
-        connection.close()
+        if connection:
+            connection.close()
 
 @app.route('/api/teachers-by-grade', methods = ['POST'])
 def get_teachers_by_grade() :
@@ -7074,55 +7110,163 @@ def vision_teacher_completion_rate():
     finally:
         conn.close()
 
-@app.route('/api/demograph-teachers' , methods = ['POST'])
-def get_teacher_demograph():
+
+@app.route('/api/demograph-teachers-dashboard', methods=['POST'])
+def get_teacher_demograph_dashboard():
+    connection = None
     try:
+        if not request.is_json:
+            connection = get_db_connection()
+            with connection.cursor() as cursor:
+                sql = """
+                SELECT 
+                    CASE 
+                        WHEN u.state IN ('Gujrat','Gujarat') THEN 'Gujarat'
+                        WHEN u.state IN ('Tamilnadu','Tamil Nadu') THEN 'Tamil Nadu'
+                        ELSE u.state 
+                    END AS normalized_state,
+                    COUNT(*) as total_count
+                FROM lifeapp.users u
+                LEFT JOIN lifeapp.schools s ON u.school_id = s.id  -- Changed to school_id
+                WHERE u.type = 5
+                  AND u.state IS NOT NULL
+                  AND u.state != ''
+                  AND u.state != '2'
+                GROUP BY normalized_state
+                ORDER BY total_count DESC
+                """
+                cursor.execute(sql)
+                result = cursor.fetchall()
+
+                formatted = [
+                    {"count": row["total_count"], "state": row["normalized_state"]}
+                    for row in result
+                ]
+                return jsonify(formatted), 200
+            
         data = request.get_json() or {}
-        print(f"DEBUG: Received data for teacher demograph: {data}")
-        
         connection = get_db_connection()
         with connection.cursor() as cursor:
-            # Build filter conditions
-            filter_conditions, filter_params = build_filter_conditions(data)
-            print(f"DEBUG: Filter conditions: {filter_conditions}, params: {filter_params}")
+            # Build filter conditions manually to handle school code conversion
+            filter_conditions = []
+            filter_params = []
             
-            # Join with schools for location-based filtering
-            join_clause = ""
-            if any(key in data for key in ['state', 'city', 'school_code']):
-                join_clause = "JOIN lifeapp.schools s ON u.school_code = s.code"
+            # Handle state filter
+            if data.get('state') and data['state'].strip():
+                filter_conditions.append("u.state = %s")
+                filter_params.append(data['state'])
             
-            # Normalize state names and aggregate counts
+            # Handle city filter
+            if data.get('city') and data['city'].strip():
+                filter_conditions.append("u.city = %s")
+                filter_params.append(data['city'])
+            
+            # UPDATED: Handle school code filter using school ID
+            if data.get('school_code'):
+                school_ids = get_school_id_from_code(data['school_code'], cursor)
+                if school_ids:
+                    placeholders = ",".join(["%s"] * len(school_ids))
+                    filter_conditions.append(f"u.school_id IN ({placeholders})")
+                    filter_params.extend(school_ids)
+                else:
+                    filter_conditions.append("1=0")  # No results if no school found
+
+            where_addon = " AND ".join(filter_conditions) if filter_conditions else "1=1"
+
             sql = f"""
             SELECT 
                 CASE 
-                    WHEN u.state IN ('Gujrat', 'Gujarat') THEN 'Gujarat'
-                    WHEN u.state IN ('Tamilnadu', 'Tamil Nadu') THEN 'Tamil Nadu'
+                    WHEN u.state IN ('Gujrat','Gujarat') THEN 'Gujarat'
+                    WHEN u.state IN ('Tamilnadu','Tamil Nadu') THEN 'Tamil Nadu'
                     ELSE u.state 
                 END AS normalized_state,
                 COUNT(*) as total_count
             FROM lifeapp.users u
-            {join_clause}
-            WHERE u.`type` = 5 AND u.state IS NOT NULL AND u.state != '' AND u.state != '2' {' AND ' + filter_conditions if filter_conditions and filter_conditions != '1=1' else ''}
+            LEFT JOIN lifeapp.schools s ON u.school_id = s.id  -- Changed to school_id
+            WHERE u.type = 5
+              AND u.state IS NOT NULL
+              AND u.state != ''
+              AND u.state != '2'
+              AND {where_addon}
             GROUP BY normalized_state
             ORDER BY total_count DESC
             """
             cursor.execute(sql, filter_params)
             result = cursor.fetchall()
-            
-            # Convert to list of dictionaries with consistent keys
-            normalized_result = [
-                {"count": row['total_count'], "state": row['normalized_state']} 
+
+            formatted = [
+                {"count": row["total_count"], "state": row["normalized_state"]}
                 for row in result
             ]
-            
-            return jsonify(normalized_result), 200
-    
+            return jsonify(formatted), 200
     except Exception as e:
+        current_app.logger.exception("demograph-teachers-dashboard")
         return jsonify({"error": str(e)}), 500
     finally:
-        connection.close()
+        if connection:
+            connection.close()          
 
+@app.route('/api/total-missions-completed-assigned-by-teacher-dashboard', methods=['POST'])
+def teacher_dashboard_mission_completions():
+    conn = None
+    try:
+        if not request.is_json:
+            filters = {}
+        else:
+            filters = request.get_json() or {}
+            
+        conn = get_db_connection()
+        with conn.cursor() as cur:
+            sql = """
+                SELECT COUNT(*) as count 
+                FROM lifeapp.la_mission_completes lamc 
+                INNER JOIN lifeapp.users u ON u.id = lamc.user_id 
+                WHERE u.type = 3 
+                AND lamc.user_id IN (
+                    SELECT DISTINCT user_id 
+                    FROM lifeapp.la_mission_assigns
+                    WHERE teacher_id IS NOT NULL
+                )
+            """
+            params = []
 
+            if filters.get('state') and filters['state'] != 'All':
+                sql += " AND u.state = %s"
+                params.append(filters['state'])
+            if filters.get('city') and filters['city'] != 'All':
+                sql += " AND u.city = %s"
+                params.append(filters['city'])
+            
+            # UPDATED: School code filtering now uses school ID
+            if filters.get('school_code') and filters['school_code'] != 'All':
+                school_ids = get_school_id_from_code(filters['school_code'], cur)
+                if school_ids:
+                    placeholders = ",".join(["%s"] * len(school_ids))
+                    sql += f" AND u.school_id IN ({placeholders})"
+                    params.extend(school_ids)
+                else:
+                    sql += " AND 1=0"  # No results if no school found
+            
+            if filters.get('grade') and filters['grade'] != 'All':
+                sql += " AND u.grade = %s"
+                params.append(filters['grade'])
+            if filters.get('gender') and filters['gender'] != 'All':
+                sql += " AND u.gender = %s"
+                params.append(filters['gender'])
+            if filters.get('start_date') and filters.get('end_date'):
+                sql += " AND lamc.created_at BETWEEN %s AND %s"
+                params.extend([filters['start_date'], filters['end_date']])
+
+            cur.execute(sql, params)
+            row = cur.fetchone()
+        return jsonify([{"count": row["count"]}]), 200
+    except Exception as e:
+        current_app.logger.exception("teacher_dashboard_mission_completions")
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if conn:
+            conn.close()
+            
 ###################################################################################
 ###################################################################################
 ######################## TEACHER / COUPON REDEEMED APIs ###########################
