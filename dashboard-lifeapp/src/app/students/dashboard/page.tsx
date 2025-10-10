@@ -1212,9 +1212,11 @@ export default function StudentDashboard() {
 
         // Fetch state-wise student count from API
         const apiResponse = await fetch(
-          `${api_startpoint}/api/demograph-students`,
+          `${api_startpoint}/api/demograph-students-dashboard`,
           {
             method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({}),
           }
         );
         const apiData: { count: string; state: string }[] =
@@ -1412,8 +1414,10 @@ export default function StudentDashboard() {
   useEffect(() => {
     async function fetchTotalPointsEarned() {
       try {
-        const res = await fetch(`${api_startpoint}/api/total-points-earned`, {
+        const res = await fetch(`${api_startpoint}/api/total-points-earned-in-students-dashboard`, {
           method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({}),
         });
 
         if (!res.ok) {
@@ -1438,8 +1442,10 @@ export default function StudentDashboard() {
   useEffect(() => {
     async function fetchTotalPointsRedeemed() {
       try {
-        const res = await fetch(`${api_startpoint}/api/total-points-redeemed`, {
+        const res = await fetch(`${api_startpoint}/api/total-points-redeemed-in-students-dashboard`, {
           method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({}),
         });
         const data = await res.json();
         if (data && data.length > 0) {
@@ -1540,9 +1546,11 @@ export default function StudentDashboard() {
     async function fetchTmcAssignedByTeacher() {
       try {
         const res = await fetch(
-          `${api_startpoint}/api/total-missions-completed-assigned-by-teacher`,
+          `${api_startpoint}/api/total-missions-completed-assigned-by-teacher-in-students-dashboard`,
           {
             method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({}),
           }
         );
         const data = await res.json();
@@ -3444,45 +3452,95 @@ export default function StudentDashboard() {
                 </header> */}
         <div className="page-body">
           <div className="container-xl pt-0 pb-4">
-            {/* Metrics Grid */}
-            <div className="row g-4 mb-4">
-              {[
-                {
-                  title: "Total Students",
-                  value: totalStudents,
-                  icon: <IconUser />,
-                  color: "bg-purple",
-                  // suffix: "",
-                },
-                // {
-                //   title: "Active Students",
-                //   value: 0,
-                //   icon: <IconUserFilled />,
-                //   color: "bg-teal",
-                // },
-                // {
-                //   title: "Inactive Students",
-                //   value: 0,
-                //   icon: <IconUserExclamation />,
-                //   color: "bg-orange",
-                //   suffix: "",
-                // },
-                // {
-                //   title: "Highest Online User Count",
-                //   value: 0,
-                //   icon: <IconUserScan />,
-                //   color: "bg-blue",
-                //   suffix: "",
-                // },
-
-              ].map((metric, index) => (
+          {/* Combined Metrics Grid */}
+          <div className="row g-4 mb-4">
+            {[
+              {
+                title: "Total Students",
+                value: totalStudents,
+                icon: <IconUser />,
+                color: "bg-purple",
+              },
+              // {
+              //   title: "Active Students",
+              //   value: 0,
+              //   icon: <IconUserFilled />,
+              //   color: "bg-teal",
+              // },
+              // {
+              //   title: "Inactive Students",
+              //   value: 0,
+              //   icon: <IconUserExclamation />,
+              //   color: "bg-orange",
+              // },
+              // {
+              //   title: "Highest Online User Count",
+              //   value: 0,
+              //   icon: <IconUserScan />,
+              //   color: "bg-blue",
+              // },
+              {
+                title: "Total Points Earned",
+                value: totalPointsEarned,
+                icon: <IconUser />,
+                color: "bg-purple",
+              },
+              {
+                title: "Total Points Redeemed",
+                value: totalPointsRedeemed,
+                icon: <IconUserFilled />,
+                color: "bg-teal",
+              },
+              {
+                title: "Total Vision Completes",
+                value: totalVisionSubmitted,
+                icon: <IconUser />,
+                color: "bg-sky-900",
+              },
+              {
+                title: "Total Vision Score Earned",
+                value: totalVisionScore,
+                icon: <IconUser />,
+                color: "bg-sky-900",
+              },
+              {
+                title: "Total Participants Joined Mentor Sessions",
+                value: sessionParticipantTotal,
+                icon: <IconUser />,
+                color: "bg-sky-900",
+              },
+              {
+                title: "Total Mentors Participated for Mentor Connect Sessions",
+                value: mentorsParticipatedSessionsTotal,
+                icon: <IconUser />,
+                color: "bg-sky-900",
+              },
+              {
+                title: "Teacher Assign Mission Completes",
+                value: tmcAssignedByTeacher,
+                icon: <IconUserExclamation />,
+                color: "bg-orange",
+              },
+              {
+                title: "Total Sessions Created by Mentors",
+                value: sessions.length,
+                icon: <IconUser />,
+                color: "bg-blue",
+              },
+              {
+                title: "Total Teacher Assigned Vision Completes",
+                value: totalTeacherAssignedVisionCompletes,
+                icon: <IconUser />,
+                color: "bg-blue",
+              },
+            ]
+              // Optional: filter out any null/undefined if you use conditional logic later
+              .filter(Boolean)
+              .map((metric, index) => (
                 <div className="col-sm-6 col-lg-3" key={index}>
                   <div className="card">
                     <div className="card-body">
                       <div className="d-flex align-items-center">
-                        {/* <div className={`${metric.color} rounded-circle p-3 text-white`}>
-                                                {React.cloneElement(metric.icon, { size: 24 })}
-                                                </div> */}
                         <div>
                           <div className="subheader">{metric.title}</div>
                           <div className="h1 mb-3">
@@ -3503,133 +3561,7 @@ export default function StudentDashboard() {
                   </div>
                 </div>
               ))}
-            </div>
-            {/* Metrics Grid */}
-            <div className="row g-4 mb-4">
-              {[
-                {
-                  title: "Total Points Earned",
-                  value: totalPointsEarned,
-                  icon: <IconUser />,
-                  color: "bg-purple",
-                },
-                {
-                  title: "Total Points Redeemed",
-                  value: totalPointsRedeemed,
-                  icon: <IconUserFilled />,
-                  color: "bg-teal",
-                },
-                {
-                  title: "Total Vision Completes",
-                  value: totalVisionSubmitted,
-                  icon: <IconUser />,
-                  color: "bg-sky-900",
-                },
-                {
-                  title: "Total Vision Score Earned",
-                  value: totalVisionScore,
-                  icon: <IconUser />,
-                  color: "bg-sky-900",
-                  suffix: "",
-                },
-
-                // { title: 'Highest Online User Count', value: 36987, icon: <IconUserScan />, color: 'bg-blue', suffix: '' },
-              ].map((metric, index) => (
-                <div className="col-sm-6 col-lg-3" key={index}>
-                  <div className="card">
-                    <div className="card-body">
-                      <div className="d-flex align-items-center">
-                        {/* <div className={`${metric.color} rounded-circle p-3 text-white`}>
-                                                {React.cloneElement(metric.icon, { size: 24 })}
-                                                </div> */}
-                        <div>
-                          <div className="subheader">{metric.title}</div>
-                          <div className="h1 mb-3">
-                            <NumberFlow
-                              value={metric.value}
-                              suffix={metric.suffix || ""}
-                              className="fw-semi-bold text-dark"
-                              transformTiming={{
-                                endDelay: 6,
-                                duration: 750,
-                                easing: "cubic-bezier(0.42, 0, 0.58, 1)",
-                              }}
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-            <div className="row g-4 mb-4">
-              {[
-                {
-                  title: "Total Participants Joined Mentor Sessions",
-                  value: sessionParticipantTotal,
-                  icon: <IconUser />,
-                  color: "bg-sky-900",
-                  suffix: "",
-                },
-                {
-                  title:
-                    "Total Mentors Participated for Mentor Connect Sessions",
-                  value: mentorsParticipatedSessionsTotal,
-                  icon: <IconUser />,
-                  color: "bg-sky-900",
-                  suffix: "",
-                },
-                {
-                  title: "Teacher Assign Mission Completes",
-                  value: tmcAssignedByTeacher,
-                  icon: <IconUserExclamation />,
-                  color: "bg-orange",
-                  suffix: "",
-                },
-                {
-                  title: "Total Sessions Created by Mentors",
-                  value: sessions.length,
-                  icon: <IconUser />,
-                  color: "bg-blue",
-                  suffix: "",
-                },
-                {
-                  title: "Total Teacher Assigned Vision Completes",
-                  value: totalTeacherAssignedVisionCompletes,
-                  icon: <IconUser />,
-                  color: "bg-blue",
-                  suffix: "",
-                },
-              ].map((metric, index) => (
-                <div className="col-sm-6 col-lg-3" key={index}>
-                  <div className="card">
-                    <div className="card-body">
-                      <div className="d-flex align-items-center">
-                        {/* <div className={`${metric.color} rounded-circle p-3 text-white`}>
-                                                {React.cloneElement(metric.icon, { size: 24 })}
-                                                </div> */}
-                        <div>
-                          <div className="subheader">{metric.title}</div>
-                          <div className="h1 mb-3">
-                            <NumberFlow
-                              value={metric.value}
-                              suffix={metric.suffix || ""}
-                              className="fw-semi-bold text-dark"
-                              transformTiming={{
-                                endDelay: 6,
-                                duration: 750,
-                                easing: "cubic-bezier(0.42, 0, 0.58, 1)",
-                              }}
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
+          </div>
             {/* New Cards for Modal Triggers */}
             <div className="row g-4 mb-4">
               <div
