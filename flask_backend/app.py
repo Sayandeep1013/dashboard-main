@@ -13252,10 +13252,11 @@ def notification_get_filtered_coupons():
 @app.route('/api/languages', methods=['POST'])
 def get_languages():
     """Fetch all languages with pagination."""
+    connection = None
     try:
         filters = request.get_json() or {}
         page = filters.get('page', 1)
-        per_page = 25  # Default pagination limit
+        per_page = 25
         offset = (page - 1) * per_page
 
         connection = get_db_connection()
@@ -13265,141 +13266,95 @@ def get_languages():
             languages = cursor.fetchall()
         return jsonify(languages)
     except Exception as e:
+        print(f"Error in get_languages: {str(e)}")
         return jsonify({'error': str(e)}), 500
     finally:
-        connection.close()
+        if connection:
+            connection.close()
 
 @app.route('/api/languages_new', methods=['POST'])
 def create_language():
-    """Create a new language with improved error handling."""
     try:
-        # Get request data and validate
-        data = request.get_json() or {}
-        print(f"Received data: {data}")  # Debugging
-        
-        title = data.get('title', '').strip()
-        slug = data.get('slug', '').strip().lower()
-        status = data.get('status', 1)
-        
-        # Validate inputs
-        if not slug:
-            return jsonify({'error': 'Slug is required'}), 400
-        
-        if not title:
-            return jsonify({'error': 'Title is required'}), 400
-            
-        try:
-            status = int(status)
-            if status not in [0, 1]:
-                return jsonify({'error': 'Status must be 0 or 1'}), 400
-        except (TypeError, ValueError):
-            return jsonify({'error': 'Invalid status value'}), 400
-        
-        # Connect to database    
+        data   = request.get_json(silent=True) or {}
+        title  = data.get('title', '').strip()
+        slug   = data.get('slug', '').strip().lower()
+        status = int(data.get('status', 1))
+
+        if not title or not slug:
+            return jsonify(error='Title and slug are required'), 400
+        if status not in (0, 1):
+            return jsonify(error='Status must be 0 or 1'), 400
+
         conn = get_db_connection()
-        if not conn:
-            return jsonify({'error': 'Database connection failed'}), 500
-            
-        try:
-            with conn.cursor() as cursor:
-                # Check for duplicate slug
-                cursor.execute(
-                    "SELECT COUNT(*) FROM lifeapp.languages WHERE slug = %s",
-                    (slug,)
-                )
-                count = cursor.fetchone()[0]
-                if count > 0:
-                    return jsonify({'error': 'Slug already exists'}), 400
-                
-                # Insert new language
-                print(f"Inserting: slug={slug}, title={title}, status={status}")  # Debugging
-                cursor.execute(
-                    "INSERT INTO lifeapp.languages (slug, title, status, created_at, updated_at) "
-                    "VALUES (%s, %s, %s, NOW(), NOW())",
-                    (slug, title, status)
-                )
-                conn.commit()
-                
-                # Get the ID of the newly created language
-                cursor.execute("SELECT LAST_INSERT_ID()")
-                new_id = cursor.fetchone()[0]
-                
-            return jsonify({
-                'message': 'Language Created Successfully',
-                'language_id': new_id
-            }), 201
-            
-        except Exception as e:
-            conn.rollback()
-            print(f"Database error: {str(e)}")  # Debugging
-            return jsonify({'error': f'Database error: {str(e)}'}), 500
-            
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO lifeapp.languages (slug, title, status, created_at, updated_at) "
+                "VALUES (%s,%s,%s,NOW(),NOW())",
+                (slug, title, status)
+            )
+            conn.commit()
+            return jsonify(message='Language created'), 201
+
+    except mysql.connector.IntegrityError as e:
+        if e.errno == 1062:                       # duplicate slug
+            return jsonify(error='Slug already exists'), 400
+        return jsonify(error=f'Database error: {e}'), 500
     except Exception as e:
-        print(f"Unexpected error: {str(e)}")  # Debugging
-        return jsonify({'error': f'Server error: {str(e)}'}), 500
-        
+        return jsonify(error='Server error'), 500
     finally:
-        if 'conn' in locals() and conn:
-            conn.close()
+        conn.close()
 
 @app.route('/api/languages_update', methods=['POST'])
 def update_language():
-    """Update a language."""
     try:
-        data = request.get_json() or {}
-        language_id = data.get('id')
-        title = data.get('title', '').strip()
-        status      = data.get('status')
-        try:
-            status = int(status)
-        except (TypeError, ValueError):
-            return jsonify({'error': 'Invalid status value'}), 400
+        data    = request.get_json(silent=True) or {}
+        lang_id = data.get('id')
+        title   = data.get('title', '').strip()
+        slug    = data.get('slug', '').strip().lower()
+        status  = int(data.get('status', 1))
 
-        slug = data.get('slug', '').strip().lower()
+        if not lang_id or not title or not slug:
+            return jsonify(error='ID, title and slug are required'), 400
+        if status not in (0, 1):
+            return jsonify(error='Status must be 0 or 1'), 400
 
-        if not language_id or not slug:
-            return jsonify({'error': 'ID and Slug are required'}), 400
+        conn = get_db_connection()
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE lifeapp.languages "
+                "SET slug=%s, title=%s, status=%s, updated_at=NOW() "
+                "WHERE id=%s",
+                (slug, title, status, lang_id)
+            )
+            conn.commit()
+            if cur.rowcount == 0:
+                return jsonify(error='Language not found'), 404
+            return jsonify(message='Language updated'), 200
 
-        connection = get_db_connection()
-        with connection.cursor() as cursor:
-            # Check if slug already exists for another language
-            cursor.execute("SELECT COUNT(*) FROM lifeapp.languages WHERE slug = %s AND id != %s", (slug, language_id))
-            exists = cursor.fetchone()
-            if exists and exists[0] > 0:
-                return jsonify({'error': 'Slug already exists'}), 400
-
-            sql = """
-                        UPDATE lifeapp.languages
-                        SET
-                            slug       = %s,
-                            title      = %s,
-                            status     = %s,
-                            updated_at = NOW()
-                        WHERE id = %s
-                """
-            cursor.execute(sql, (slug, title, status, language_id))
-            connection.commit()
-        return jsonify({'message': 'Language Updated'}), 200
+    except mysql.connector.IntegrityError as e:
+        if e.errno == 1062:
+            return jsonify(error='Slug already exists'), 400
+        return jsonify(error=f'Database error: {e}'), 500
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify(error='Server error'), 500
     finally:
-        connection.close()
+        conn.close()
 
 @app.route('/api/languages_delete/<int:language_id>', methods=['DELETE'])
 def delete_language(language_id):
-    """Delete a language."""
     try:
-        connection = get_db_connection()
-        with connection.cursor() as cursor:
-            sql = "DELETE FROM lifeapp.languages WHERE id = %s"
-            cursor.execute(sql, (language_id,))
-            connection.commit()
-        return jsonify({'message': 'Language Deleted'}), 200
+        conn = get_db_connection()
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM lifeapp.languages WHERE id=%s", (language_id,))
+            conn.commit()
+            if cur.rowcount == 0:
+                return jsonify(error='Language not found'), 404
+            return jsonify(message='Language deleted'), 200
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify(error='Server error'), 500
     finally:
-        connection.close()
-
+        conn.close()
+        
 @app.route('/api/languages/<int:language_id>/status', methods=['PATCH'])
 def change_language_status(language_id):
     """Change the status of a language."""
