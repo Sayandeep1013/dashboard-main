@@ -213,11 +213,18 @@ def build_filter_conditions(request_args=None):
         conditions.append("u.city = %s")
         params.append(city)
     
-    # School code filter
+    # School code filter - NEW LOGIC
     school_code = request_args.get('school_code')
     if school_code and school_code != 'All' and str(school_code).strip():
-        conditions.append("u.school_code = %s")
-        params.append(str(school_code).strip())
+        # For students (type 3), they have school_code directly
+        # For non-students, we need to find school_id from schools table
+        conditions.append("""
+            (u.school_code = %s OR 
+             (u.type != 3 AND u.school_id IN (
+                 SELECT id FROM lifeapp.schools WHERE code = %s
+             )))
+        """)
+        params.extend([str(school_code).strip(), str(school_code).strip()])
     
     # User type filter
     user_type = request_args.get('user_type')
@@ -228,6 +235,8 @@ def build_filter_conditions(request_args=None):
             conditions.append("u.type = 5")
         elif user_type == 'Mentor':
             conditions.append("u.type = 4")
+        elif user_type == 'Unspecified':
+            conditions.append("(u.type NOT IN (1,3,4,5) OR u.type IS NULL)")
     
     # Grade filter
     grade = request_args.get('grade')
@@ -244,30 +253,26 @@ def build_filter_conditions(request_args=None):
             conditions.append("u.gender = 1")
         elif gender == 'Female':
             conditions.append("u.gender = 2")
+        elif gender == 'Other':
+            conditions.append("u.gender NOT IN (1, 2)")
     
-    # Date range filter - updated to be consistent with other endpoints
+    # Date range filter
     date_range = request_args.get('date_range')
     if date_range and date_range != 'All':
-        if date_range == 'Today':
-            conditions.append("DATE(created_at) = CURDATE()")
-        elif date_range == 'Yesterday':
-            conditions.append("DATE(created_at) = DATE_SUB(CURDATE(), INTERVAL 1 DAY)")
-        elif date_range == 'This Week':
-            conditions.append("WEEK(created_at, 1) = WEEK(CURDATE(), 1) AND YEAR(created_at) = YEAR(CURDATE())")
-        elif date_range == 'Last Week':
-            conditions.append("WEEK(created_at, 1) = WEEK(DATE_SUB(CURDATE(), INTERVAL 1 WEEK), 1) AND YEAR(created_at) = YEAR(DATE_SUB(CURDATE(), INTERVAL 1 WEEK))")
-        elif date_range == 'This Month':
-            conditions.append("MONTH(created_at) = MONTH(CURDATE()) AND YEAR(created_at) = YEAR(CURDATE())")
-        elif date_range == 'Last Month':
-            conditions.append("MONTH(created_at) = MONTH(DATE_SUB(CURDATE(), INTERVAL 1 MONTH)) AND YEAR(created_at) = YEAR(DATE_SUB(CURDATE(), INTERVAL 1 MONTH))")
-        elif date_range == 'This Year':
-            conditions.append("YEAR(created_at) = YEAR(CURDATE())")
-        elif date_range == 'Last Year':
-            conditions.append("YEAR(created_at) = YEAR(DATE_SUB(CURDATE(), INTERVAL 1 YEAR))")
+        if date_range == 'last7days':
+            conditions.append("u.created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)")
+        elif date_range == 'last30days':
+            conditions.append("u.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)")
+        elif date_range == 'last3months':
+            conditions.append("u.created_at >= DATE_SUB(NOW(), INTERVAL 3 MONTH)")
+        elif date_range == 'last6months':
+            conditions.append("u.created_at >= DATE_SUB(NOW(), INTERVAL 6 MONTH)")
+        elif date_range == 'lastyear':
+            conditions.append("u.created_at >= DATE_SUB(NOW(), INTERVAL 1 YEAR)")
     
     where_clause = " AND ".join(conditions) if conditions else "1=1"
     return where_clause, params
-    
+
 def execute_query(query: str, params: tuple = None) -> List[Dict[str, Any]]:
     """
     Execute a database query and return results.
@@ -2349,7 +2354,7 @@ def get_teacher_demograph_2():
     finally:
         connection.close()
 
-@app.route('/api/school_count', methods = ['POST'])
+@app.route('/api/school_count', methods=['POST'])
 def get_school_count():
     try:
         connection = get_db_connection()
@@ -2359,39 +2364,41 @@ def get_school_count():
             
             # Build base query
             sql = """
-                select count(distinct name) as count from lifeapp.schools 
-                where is_life_lab = 1 and deleted_at is null
+                SELECT COUNT(DISTINCT s.id) as count 
+                FROM lifeapp.schools s
+                WHERE s.is_life_lab = 1 AND s.deleted_at IS NULL
             """
             params = []
             
             # Add state filter
             if filters.get('state') and filters['state'] != 'All':
-                sql += " AND state = %s"
+                sql += " AND s.state = %s"
                 params.append(filters['state'])
             
             # Add city filter
             if filters.get('city') and filters['city'] != 'All':
-                sql += " AND city = %s"
+                sql += " AND s.city = %s"
                 params.append(filters['city'])
             
-            # Add school code filter
+            # Add school code filter - handle both direct and lookup
             if filters.get('school_code') and filters['school_code'] != 'All':
-                sql += " AND school_code = %s"
-                params.append(filters['school_code'])
+                school_code = str(filters['school_code']).strip()
+                sql += " AND s.code = %s"
+                params.append(school_code)
             
             # Add date range filter if applicable
             if filters.get('date_range') and filters['date_range'] != 'All':
                 date_filter = filters['date_range']
                 if date_filter == 'last7days':
-                    sql += " AND created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)"
+                    sql += " AND s.created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)"
                 elif date_filter == 'last30days':
-                    sql += " AND created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)"
+                    sql += " AND s.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)"
                 elif date_filter == 'last3months':
-                    sql += " AND created_at >= DATE_SUB(NOW(), INTERVAL 3 MONTH)"
+                    sql += " AND s.created_at >= DATE_SUB(NOW(), INTERVAL 3 MONTH)"
                 elif date_filter == 'last6months':
-                    sql += " AND created_at >= DATE_SUB(NOW(), INTERVAL 6 MONTH)"
+                    sql += " AND s.created_at >= DATE_SUB(NOW(), INTERVAL 6 MONTH)"
                 elif date_filter == 'lastyear':
-                    sql += " AND created_at >= DATE_SUB(NOW(), INTERVAL 1 YEAR)"
+                    sql += " AND s.created_at >= DATE_SUB(NOW(), INTERVAL 1 YEAR)"
             
             cursor.execute(sql, params)
             result = cursor.fetchall()

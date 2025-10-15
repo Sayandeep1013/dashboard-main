@@ -8,6 +8,7 @@ import { useState, useEffect, useRef } from "react";
 import NumberFlow from "@number-flow/react";
 import LogoutButton from "@/components/logoutButton";
 import Papa from "papaparse";
+import React, { forwardRef } from 'react';
 import * as XLSX from "xlsx";
 import {
   AreaChart,
@@ -43,7 +44,7 @@ import {
   Legend,
   ArcElement,
 } from "chart.js";
-import React from "react";
+// import React from "react";
 
 ChartJS.register(
   CategoryScale,
@@ -263,17 +264,12 @@ const ChartSkeleton = () => (
 );
 
 // Lazy Chart Component with Intersection Observer
-const LazyChart = ({
-  option,
-  style,
-  loading,
-  id = `chart-${Math.random().toString(36).substr(2, 9)}`,
-}: {
+const LazyChart = forwardRef<ReactECharts, {
   option: any;
   style?: React.CSSProperties;
   loading: boolean;
   id?: string;
-}) => {
+}>(({ option, style, loading, id = `chart-${Math.random().toString(36).substr(2, 9)}` }, ref) => {
   const [isVisible, setIsVisible] = useState(false);
   const [hasBeenVisible, setHasBeenVisible] = useState(false);
   const chartRef = useRef<HTMLDivElement>(null);
@@ -301,11 +297,18 @@ const LazyChart = ({
       {loading || !isVisible ? (
         <ChartSkeleton />
       ) : (
-        <ReactECharts option={option} style={style} />
+        <ReactECharts 
+          ref={ref}  // Forward the ref here
+          option={option} 
+          style={style} 
+        />
       )}
     </div>
   );
-};
+});
+
+// Add this line directly after the component definition
+LazyChart.displayName = 'LazyChart';
 
 export default function UserAnalyticsDashboard() {
   const router = useRouter();
@@ -2061,51 +2064,44 @@ export default function UserAnalyticsDashboard() {
   };
 
   // Add this state variable with your existing state declarations
-  const [stateCounts, setStateCounts] = useState<
-    Array<{ state: string; count_state: number }>
-  >([]);
-
+  const [stateCounts, setStateCounts] = useState<Array<{ state: string; count_state: number }>>([]);
   // Add this useEffect block with your existing useEffect hooks
   useEffect(() => {
-    async function fetchSchoolStateCounts() {
-      try {
-        const res = await fetch(`${api_startpoint}/api/count-school-state`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(buildFilterParams()),
-        });
-        const data = await res.json();
+      async function fetchSchoolStateCounts() {
+          try {
+              const res = await fetch(`${api_startpoint}/api/count-school-state`, {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify(buildFilterParams()),
+              });
+              const data = await res.json();
 
-        // Check if data exists and is an array with valid structure
-        if (
-          data &&
-          Array.isArray(data) &&
-          data.length > 0 &&
-          data[0].state !== undefined
-        ) {
-          setStateCounts(data);
-        } else {
-          setStateCounts([]);
-        }
-      } catch (error) {
-        console.error("Error fetching school state counts:", error);
-        setStateCounts([]);
+              // Check if data exists and is an array with valid structure
+              if (data && Array.isArray(data) && data.length > 0 && data[0].state !== undefined) {
+                  setStateCounts(data);
+              } else {
+                  console.warn("Invalid school state data:", data);
+                  setStateCounts([]);
+              }
+          } catch (error) {
+              console.error("Error fetching school state counts:", error);
+              setStateCounts([]);
+          }
       }
-    }
-    fetchSchoolStateCounts();
+      fetchSchoolStateCounts();
   }, [globalFilters]);
+
   const schoolStateData = {
-    labels: (stateCounts || []).map((item) => item.state),
-    datasets: [
-      {
-        label: "No. of Schools",
-        data: (stateCounts || []).map((item) => item.count_state),
-        backgroundColor: "#4A90E2",
-        // Adding border radius to each bar
-        borderRadius: 15,
-        borderSkipped: false,
-      },
-    ],
+      labels: (stateCounts || []).map((item) => item.state),
+      datasets: [
+          {
+              label: "No. of Schools",
+              data: (stateCounts || []).map((item) => item.count_state),
+              backgroundColor: "#4A90E2",
+              borderRadius: 15,
+              borderSkipped: false,
+          },
+      ],
   };
   const schoolChartOptions = {
     indexAxis: "y" as const, // Makes it a horizontal bar chart
@@ -6624,10 +6620,12 @@ export default function UserAnalyticsDashboard() {
                     <div>Error: {error}</div>
                   ) : (
                     <LazyChart
+                      ref={chartRef1}
                       option={EchartOption}
                       style={{ height: "400px", width: "100%" }}
                       loading={loadingPhase2}
                     />
+                    
                   )}
                 </div>
                 <div className="w-full h-45">
@@ -6699,6 +6697,7 @@ export default function UserAnalyticsDashboard() {
                     <div>Error: {errorGender}</div>
                   ) : (
                     <LazyChart
+                      ref={chartRef2}
                       option={EchartGenderOption}
                       style={{ height: "400px", width: "100%" }}
                       loading={loadingGender || loadingPhase2}
@@ -6810,6 +6809,7 @@ export default function UserAnalyticsDashboard() {
                       </div>
                     ) : (
                       <LazyChart
+                        ref={chartRef3}
                         option={optionMissionTransformed}
                         style={{ height: "400px", width: "100%" }}
                         loading={missionLoading || loadingPhase3}
@@ -6897,6 +6897,7 @@ export default function UserAnalyticsDashboard() {
                       </div>
                     ) : (
                       <LazyChart
+                        ref={chartRef4}
                         option={optionQuizTransformed}
                         style={{ height: "400px", width: "100%" }}
                         loading={quizLoading || loadingPhase3}
@@ -7009,6 +7010,7 @@ export default function UserAnalyticsDashboard() {
                       </div>
                     ) : (
                       <LazyChart
+                        ref={chartRef5}
                         option={optionJigyasaTransformed}
                         style={{ height: "400px", width: "100%" }}
                         loading={jigyasaLoading || loadingPhase3}
@@ -7121,6 +7123,7 @@ export default function UserAnalyticsDashboard() {
                       </div>
                     ) : (
                       <LazyChart
+                        ref={chartRef6}
                         option={optionPragyaTransformed}
                         style={{ height: "400px", width: "100%" }}
                         loading={pragyaLoading || loadingPhase3}
@@ -7210,6 +7213,7 @@ export default function UserAnalyticsDashboard() {
                         </div>
                       ) : (
                         <LazyChart
+                          ref={chartRef19}
                           option={optionVision}
                           style={{ height: "400px", width: "100%" }}
                           loading={visionLoading || loadingPhase3}
@@ -7286,6 +7290,7 @@ export default function UserAnalyticsDashboard() {
                         </div>
                       ) : (
                         <LazyChart
+                          ref={chartRef12}
                           option={pointsMissionChartOption}
                           style={{ height: 400 }}
                           loading={pointsMissionLoading || loadingPhase3}
@@ -7352,6 +7357,7 @@ export default function UserAnalyticsDashboard() {
                       </div>
                     ) : (
                       <LazyChart
+                        ref={chartRef18}
                         option={pointsQuizChartOption}
                         style={{ height: "400px", width: "100%" }}
                         loading={pointsQuizLoading || loadingPhase3}
@@ -7426,6 +7432,7 @@ export default function UserAnalyticsDashboard() {
                         </div>
                       ) : (
                         <LazyChart
+                          ref={chartRef13}
                           option={pointsJigyasaChartOption}
                           style={{ height: 400 }}
                           loading={pointsJigyasaLoading || loadingPhase3}
@@ -7501,6 +7508,7 @@ export default function UserAnalyticsDashboard() {
                         </div>
                       ) : (
                         <LazyChart
+                          ref={chartRef14}
                           option={pointsPragyaChartOption}
                           style={{ height: 400 }}
                           loading={pointsPragyaLoading || loadingPhase3}
@@ -7567,6 +7575,7 @@ export default function UserAnalyticsDashboard() {
                         </div>
                       ) : (
                         <LazyChart
+                          ref={chartRef20}
                           option={optionVisionScore}
                           style={{ height: 400 }}
                           loading={VisionScoreLoading || loadingPhase3}
@@ -7645,6 +7654,7 @@ export default function UserAnalyticsDashboard() {
                         </div>
                       ) : (
                         <LazyChart
+                          ref={chartRef15}
                           option={couponRedeemsSeriesOptions}
                           style={{ height: 400 }}
                           loading={couponRedeemsLoading || loadingPhase3}
@@ -7725,6 +7735,7 @@ export default function UserAnalyticsDashboard() {
                         </div>
                       ) : (
                         <LazyChart
+                          ref={chartRef17}
                           option={chartOptionPBL}
                           style={{ height: 400 }}
                           loading={loadingPBL || loadingPhase3}
@@ -7796,6 +7807,7 @@ export default function UserAnalyticsDashboard() {
                       <div>Error: {errorGrade}</div>
                     ) : (
                       <LazyChart
+                        ref={chartRef7}
                         option={EchartGradeOption}
                         style={{ height: "400px", width: "100%" }}
                         loading={loadingGrade || loadingPhase2}
@@ -7868,6 +7880,7 @@ export default function UserAnalyticsDashboard() {
                       <div>Error: {errorTeacherGrade}</div>
                     ) : (
                       <LazyChart
+                        ref={chartRef8}
                         option={EchartTeacherGradeOption}
                         style={{ height: "400px", width: "100%" }}
                         loading={loadingTeacherGrade || loadingPhase2}
@@ -7961,6 +7974,7 @@ export default function UserAnalyticsDashboard() {
                         </div>
                       ) : (
                         <LazyChart
+                          ref={chartRef9}
                           option={chartOptionStudent}
                           style={{ height: "400px", width: "100%" }}
                           loading={studentLoading || loadingPhase2}
@@ -8057,6 +8071,7 @@ export default function UserAnalyticsDashboard() {
                         </div>
                       ) : (
                         <LazyChart
+                          ref={chartRef10}
                           option={chartOptionTeacher}
                           style={{ height: "400px", width: "100%" }}
                           loading={teacherLoading || loadingPhase2}
@@ -8139,6 +8154,7 @@ export default function UserAnalyticsDashboard() {
                       </div>
                     ) : (
                       <LazyChart
+                        ref={chartRef16}
                         option={chartOptionSchool}
                         style={{ height: "400px", width: "100%" }}
                         loading={schoolLoading || loadingPhase2}
@@ -8257,6 +8273,7 @@ export default function UserAnalyticsDashboard() {
                         <div>Error: {errorLevel}</div>
                       ) : (
                         <LazyChart
+                          ref={chartRef11}
                           option={EchartLevelOption}
                           style={{ height: "400px", width: "100%" }}
                           loading={loadingLevel || loadingPhase2}
