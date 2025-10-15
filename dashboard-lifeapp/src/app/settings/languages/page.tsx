@@ -13,6 +13,7 @@ import { IconEdit, IconTrash } from '@tabler/icons-react';
 // const api_startpoint = "http://152.42.239.141:5000";
 // const api_startpoint = "http://152.42.239.141:5000";
 const api_startpoint = "https://admin-api.life-lab.org";
+
 interface Language {
     id: number;
     title: string;

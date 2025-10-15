@@ -185,6 +185,7 @@ def upload_media(file):
         'url': BASE_URL + key
     }
 
+
 ###################################################################################
 ###################################################################################
 ######################## HOME DASHBOARD APIs ######################################
@@ -13354,7 +13355,7 @@ def delete_language(language_id):
         return jsonify(error='Server error'), 500
     finally:
         conn.close()
-        
+
 @app.route('/api/languages/<int:language_id>/status', methods=['PATCH'])
 def change_language_status(language_id):
     """Change the status of a language."""
