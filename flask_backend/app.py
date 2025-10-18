@@ -1007,7 +1007,7 @@ def get_students_by_grade_over_time():
                 FROM lifeapp.users u
                 {join_clause}
                 WHERE {where_conditions}
-                GROUP BY period, grade 
+                GROUP BY period, IFNULL(u.grade, 'Unspecified')
                 ORDER BY period, grade
             """
             
@@ -1125,13 +1125,13 @@ def get_teachers_by_grade_over_time():
                 where_conditions += f" AND {filter_conditions}"
 
             sql = f"""
-                SELECT {period_expr}                     AS period,
-                       COALESCE(tg.la_grade_id, 'Unspecified') AS grade,
-                       COUNT(*)                            AS count
+                SELECT {period_expr} AS period,
+                    COALESCE(tg.la_grade_id, 'Unspecified') AS grade,
+                    COUNT(*) AS count
                 FROM lifeapp.la_teacher_grades tg
                 {join_clause}
                 WHERE {where_conditions}
-                GROUP BY period, grade
+                GROUP BY period, COALESCE(tg.la_grade_id, 'Unspecified')
                 ORDER BY period, grade
             """
 
@@ -1142,7 +1142,7 @@ def get_teachers_by_grade_over_time():
         return jsonify({"error": str(e)}), 500
     finally:
         connection.close()
-        
+      
 @app.route('/api/teacher-count', methods = ['POST'])
 def get_teacher_count():
     try:

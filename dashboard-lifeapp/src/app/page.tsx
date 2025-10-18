@@ -2330,32 +2330,30 @@ export default function UserAnalyticsDashboard() {
       }),
     })
       .then((response) => {
-        if (!response.ok) {
-          throw new Error("Network response was not ok");
-        }
+        if (!response.ok) throw new Error("Network error");
         return response.json();
       })
-      .then((data: GradeEntry[]) => {
-        // Transform the data into a pivot structure.
-        // We want one record per period with counts for each grade.
-        const groupedData: { [period: string]: any } = {};
-        data.forEach((entry) => {
-          // Replace a null period with "Unknown" if desired
-          const period = entry.period || "Unknown";
-          // If grade is returned as a number then transform to string display like "Grade 4"
-          // Here we assume entry.grade is already a string (or 'Unspecified')
-          if (!groupedData[period]) {
-            groupedData[period] = { period };
-          }
-          // If there are multiple entries for the same grade in one period, sum the counts.
-          groupedData[period][entry.grade] =
-            (groupedData[period][entry.grade] || 0) + entry.count;
-        });
-        setEchartDataGrade(Object.values(groupedData));
-        setLoadingGrade(false);
+      .then((data) => {
+        //  SAFETY CHECK: is it an array?
+        if (Array.isArray(data)) {
+          const groupedData: { [period: string]: any } = {};
+          data.forEach((entry) => {
+            const period = entry.period || "Unknown";
+            if (!groupedData[period]) groupedData[period] = { period };
+            groupedData[period][entry.grade] = (groupedData[period][entry.grade] || 0) + entry.count;
+          });
+          setEchartDataGrade(Object.values(groupedData));
+        } else {
+          // Handle error response
+          console.error("API returned non-array:", data);
+          setEchartDataGrade([]); // reset to empty array
+        }
       })
       .catch((err) => {
-        setErrorGrade(err.message);
+        console.error("Fetch error:", err);
+        setEchartDataGrade([]); // ensure it's an array
+      })
+      .finally(() => {
         setLoadingGrade(false);
       });
   };
@@ -2368,9 +2366,11 @@ export default function UserAnalyticsDashboard() {
   // Determine unique grade keys for the legend/series from EchartDataGrade
   const uniqueGrades = Array.from(
     new Set(
-      EchartDataGrade.flatMap((item) =>
-        Object.keys(item).filter((key) => key !== "period")
-      )
+      Array.isArray(EchartDataGrade)
+        ? EchartDataGrade.flatMap(item =>
+            Object.keys(item).filter(key => key !== "period")
+          )
+        : []
     )
   );
 
@@ -2494,34 +2494,34 @@ export default function UserAnalyticsDashboard() {
       }),
     })
       .then((response) => {
-        if (!response.ok) {
-          throw new Error("Network response was not ok.");
-        }
+        if (!response.ok) throw new Error("Network error");
         return response.json();
       })
-      .then((data: TeacherGradeEntry[]) => {
-        // Transform the data to pivot the table such that each row represents a period
-        // and columns are teacher grades.
-        const groupedData: { [period: string]: any } = {};
-        data.forEach((entry) => {
-          const period = entry.period || "Unknown";
-          // Optionally, format the grade—if the grade is a number, you might convert it:
-          // const gradeLabel = entry.grade === null ? 'Unspecified' : `Grade ${entry.grade}`;
-          const gradeLabel = entry.grade; // We assume grade is already an appropriate string
-          if (!groupedData[period]) {
-            groupedData[period] = { period };
-          }
-          groupedData[period][gradeLabel] =
-            (groupedData[period][gradeLabel] || 0) + entry.count;
-        });
-        setEchartDataTeacherGrade(Object.values(groupedData));
-        setLoadingTeacherGrade(false);
+      .then((data) => {
+        if (Array.isArray(data)) {
+          const groupedData: { [period: string]: any } = {};
+          data.forEach((entry) => {
+            const period = entry.period || "Unknown";
+            const gradeLabel = entry.grade;
+            if (!groupedData[period]) groupedData[period] = { period };
+            groupedData[period][gradeLabel] =
+              (groupedData[period][gradeLabel] || 0) + entry.count;
+          });
+          setEchartDataTeacherGrade(Object.values(groupedData));
+        } else {
+          console.error("API returned non-array:", data);
+          setEchartDataTeacherGrade([]);
+        }
       })
       .catch((err) => {
-        setErrorTeacherGrade(err.message);
+        console.error("Fetch error:", err);
+        setEchartDataTeacherGrade([]);
+      })
+      .finally(() => {
         setLoadingTeacherGrade(false);
       });
   };
+
 
   // Fetch new data whenever the grouping filter changes.
   useEffect(() => {
@@ -2531,9 +2531,11 @@ export default function UserAnalyticsDashboard() {
   // Determine the unique teacher grade keys for the legend and series.
   const uniqueGradesTeacher = Array.from(
     new Set(
-      EchartDataTeacherGrade.flatMap((item) =>
-        Object.keys(item).filter((key) => key !== "period")
-      )
+      Array.isArray(EchartDataTeacherGrade)
+        ? EchartDataTeacherGrade.flatMap(item =>
+            Object.keys(item).filter(key => key !== "period")
+          )
+        : []
     )
   );
   // Assume uniqueGrades contains strings like "3", "4", "1", "7", "2"
