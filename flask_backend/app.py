@@ -3727,8 +3727,8 @@ def get_PBLsubmissions():
     # Mapping of grouping keys to SQL expressions
     GROUPING_SQL = {
         'daily':     "DATE(lamc.created_at)",
-        'weekly':    "DATE_FORMAT(lamc.created_at, '%%x-%%v')",
-        'monthly':   "DATE_FORMAT(lamc.created_at, '%%Y-%%m')",
+        'weekly':    "DATE_FORMAT(lamc.created_at, '%x-%v')",
+        'monthly':   "DATE_FORMAT(lamc.created_at, '%Y-%m')",
         'quarterly': "CONCAT(YEAR(lamc.created_at), '-Q', QUARTER(lamc.created_at))",
         'yearly':    "YEAR(lamc.created_at)",
         'lifetime':  "'All Time'"
@@ -16286,6 +16286,7 @@ def handle_mentor_session_details(conn, cursor, session_participant_id):
             'total_submission': 0,
             'total_coins_earned': 0
         }
+
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000, use_reloader=True)

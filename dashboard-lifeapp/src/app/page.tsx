@@ -319,6 +319,7 @@ export default function UserAnalyticsDashboard() {
       router.push("/login");
     }
   }, [router]);
+  
   const formatPeriod = (period: string, grouping: string) => {
     if (grouping === "daily") {
       try {
@@ -5687,19 +5688,23 @@ export default function UserAnalyticsDashboard() {
   );
 
   // invisible series for total labels
-  seriesVision.push({
+  const totalSeriesVision = {
     name: "Total",
     type: "bar",
-    stack: "total",
     data: totalsVision,
-    itemStyle: { opacity: 0 },
-    emphasis: { itemStyle: { opacity: 0 } },
+    barGap: "-100%", // This makes it overlap exactly
+    itemStyle: { color: "transparent" },
     label: {
       show: true,
       position: "top",
       formatter: "{c}",
+      fontWeight: "bold",
+      color: "#333",
     },
-  });
+    tooltip: { show: false },
+    emphasis: { disabled: true },
+    // z: -1, // Render behind the colored bars
+  };
   // tooltip formatter
   const tooltipVision = {
     trigger: "axis",
@@ -5725,7 +5730,7 @@ export default function UserAnalyticsDashboard() {
     legend: { data: levelsVision, bottom: 0 },
     xAxis: {
       type: "category",
-      data: periodsVision,
+      data: periodsVision.map(p => formatPeriod(p, groupingVision)), 
       axisLabel: { rotate: groupingVision === "daily" ? 45 : 0 },
     },
     yAxis: { type: "value", name: "Users Completed" },
@@ -5733,7 +5738,7 @@ export default function UserAnalyticsDashboard() {
       { type: "inside", start: 0, end: 100 },
       { type: "slider", start: 0, end: 100 },
     ],
-    series: seriesVision,
+    series: [...seriesVision, totalSeriesVision],
   };
 
   // ----------------- vision score ------------------
@@ -5748,18 +5753,27 @@ export default function UserAnalyticsDashboard() {
   const [VisionScoreLoading, setVisionScoreLoading] = useState(false);
   useEffect(() => {
     setVisionScoreLoading(true);
-    const params = new URLSearchParams({ grouping: groupingVisionScore });
-    fetch(`${api_startpoint}/api/vision-score-stats?${params}`)
+    // const params = new URLSearchParams({ grouping: groupingVisionScore });
+    const filterParams = buildFilterParams();
+
+    fetch(`${api_startpoint}/api/vision-score-stats`,{
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        grouping: groupingVisionScore,
+        ...filterParams,
+      }),
+    })
       .then((res) => res.json())
       .then((json) => {
-        setVisionScore(json.data);
+        setVisionScore(json.data || []);
         setVisionScoreLoading(false);
       })
       .catch((err) => {
         console.error("Failed to fetch vision scores stats:", err);
         setVisionScoreLoading(false);
       });
-  }, [grouping]);
+  }, [groupingVisionScore, debouncedFilters]);
 
   const periodsVisionScore = VisionScore.map((d) => d.period);
   const scoresVisionScore = VisionScore.map((d) => d.total_score);
@@ -5769,7 +5783,7 @@ export default function UserAnalyticsDashboard() {
     tooltip: { trigger: "axis", axisPointer: { type: "line" } },
     xAxis: {
       type: "category",
-      data: periodsVisionScore,
+      data: periodsVisionScore.map(p => formatPeriod(p, groupingVisionScore)),
       axisLabel: { rotate: groupingVisionScore === "daily" ? 45 : 0 },
     },
     yAxis: { type: "value", name: "Score" },
@@ -7884,6 +7898,7 @@ export default function UserAnalyticsDashboard() {
                         option={EchartTeacherGradeOption}
                         style={{ height: "400px", width: "100%" }}
                         loading={loadingTeacherGrade || loadingPhase2}
+                        key={`teacher-grade-${groupingTeacherGrade}`}
                       />
                     )}
                   </div>
