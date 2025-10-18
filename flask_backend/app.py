@@ -765,7 +765,7 @@ def get_count_school_rate():
             
             # Add school code filter
             if filters.get('school_code') and filters['school_code'] != 'All':
-                sql += " AND school_code = %s"
+                sql += " AND code = %s"
                 params.append(filters['school_code'])
             
             # Add date range filter if applicable
@@ -1214,55 +1214,6 @@ def get_teacher_count():
         return jsonify({"error": str(e)}), 500
     finally:
         connection.close()
-
-
-# @app.route('/api/demograph-teachers' , methods = ['POST'])
-# def get_teacher_demograph():
-#     try:
-#         data = request.get_json() or {}
-#         print(f"DEBUG: Received data for teacher demograph: {data}")
-        
-#         connection = get_db_connection()
-#         with connection.cursor() as cursor:
-#             # Build filter conditions
-#             filter_conditions, filter_params = build_filter_conditions(data)
-#             print(f"DEBUG: Filter conditions: {filter_conditions}, params: {filter_params}")
-            
-#             # Join with schools for location-based filtering
-#             join_clause = ""
-#             if any(key in data for key in ['state', 'city', 'school_code']):
-#                 join_clause = "JOIN lifeapp.schools s ON u.school_code = s.code"
-            
-#             # Normalize state names and aggregate counts
-#             sql = f"""
-#             SELECT 
-#                 CASE 
-#                     WHEN u.state IN ('Gujrat', 'Gujarat') THEN 'Gujarat'
-#                     WHEN u.state IN ('Tamilnadu', 'Tamil Nadu') THEN 'Tamil Nadu'
-#                     ELSE u.state 
-#                 END AS normalized_state,
-#                 COUNT(*) as total_count
-#             FROM lifeapp.users u
-#             {join_clause}
-#             WHERE u.`type` = 5 AND u.state IS NOT NULL AND u.state != '' AND u.state != '2' {' AND ' + filter_conditions if filter_conditions and filter_conditions != '1=1' else ''}
-#             GROUP BY normalized_state
-#             ORDER BY total_count DESC
-#             """
-#             cursor.execute(sql, filter_params)
-#             result = cursor.fetchall()
-            
-#             # Convert to list of dictionaries with consistent keys
-#             normalized_result = [
-#                 {"count": row['total_count'], "state": row['normalized_state']} 
-#                 for row in result
-#             ]
-            
-#             return jsonify(normalized_result), 200
-    
-#     except Exception as e:
-#         return jsonify({"error": str(e)}), 500
-#     finally:
-#         connection.close()
 
 @app.route('/api/total-points-earned', methods=['POST'])
 def get_total_points_earned():
