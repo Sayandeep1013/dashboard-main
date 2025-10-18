@@ -1089,60 +1089,60 @@ def get_total_student_count():
 def get_teachers_by_grade_over_time():
     req = request.get_json() or {}
     grouping = req.get('grouping', 'monthly')
-    
-    # Choose the appropriate time expression for grouping
+
+    # 1. time bucketing on la_teacher_grades
     if grouping == 'daily':
-        period_expr = "DATE(u.created_at)"
+        period_expr = "DATE(tg.created_at)"
     elif grouping == 'weekly':
-        period_expr = "CONCAT(YEAR(u.created_at), '-', LPAD(WEEK(u.created_at, 3), 2, '0'))"
+        period_expr = "CONCAT(YEAR(tg.created_at), '-', LPAD(WEEK(tg.created_at, 3), 2, '0'))"
     elif grouping == 'monthly':
-        period_expr = "DATE_FORMAT(u.created_at, '%%Y-%%M')"
+        period_expr = "DATE_FORMAT(tg.created_at, '%%Y-%%M')"
     elif grouping == 'quarterly':
-        period_expr = "CONCAT(YEAR(u.created_at), '-Q', QUARTER(u.created_at))"
+        period_expr = "CONCAT(YEAR(tg.created_at), '-Q', QUARTER(tg.created_at))"
     elif grouping == 'yearly':
-        period_expr = "YEAR(u.created_at)"
+        period_expr = "YEAR(tg.created_at)"
     elif grouping == 'lifetime':
         period_expr = "'Lifetime'"
     else:
-        period_expr = "DATE_FORMAT(u.created_at, '%%Y-%M')"
+        period_expr = "DATE_FORMAT(tg.created_at, '%%Y-%%M')"
 
     try:
         connection = get_db_connection()
         with connection.cursor() as cursor:
-            # Build filter conditions
             filter_conditions, filter_params = build_filter_conditions(req)
-            
-            # Join with schools for location-based filtering
+
+            # 2. optional location joins
             join_clause = ""
-            if any(key in req for key in ['state', 'city', 'school_code']):
-                join_clause = "JOIN lifeapp.schools s ON u.school_code = s.code"
-            
-            # Build WHERE clause properly
-            where_conditions = "u.`type` = 5"
+            if any(key in req for key in ('state', 'city', 'school_code')):
+                join_clause = """
+                    JOIN lifeapp.users u ON tg.user_id = u.id
+                    JOIN lifeapp.schools s ON u.school_code = s.code
+                """
+
+            # 3. no type filter needed – every row is already a teacher-grade link
+            where_conditions = "1=1"
             if filter_conditions and filter_conditions != "1=1":
                 where_conditions += f" AND {filter_conditions}"
-            
-            # Build base query with filters
+
             sql = f"""
-                SELECT {period_expr} AS period, 
-                       IFNULL(u.grade, 'Unspecified') AS grade,
-                       COUNT(*) AS count
-                FROM lifeapp.users u
+                SELECT {period_expr}                     AS period,
+                       COALESCE(tg.la_grade_id, 'Unspecified') AS grade,
+                       COUNT(*)                            AS count
+                FROM lifeapp.la_teacher_grades tg
                 {join_clause}
                 WHERE {where_conditions}
-                GROUP BY period, grade 
+                GROUP BY period, grade
                 ORDER BY period, grade
             """
-            
+
             cursor.execute(sql, filter_params)
-            result = cursor.fetchall()  
+            result = cursor.fetchall()
             return jsonify(result), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
     finally:
-        if 'connection' in locals():
-            connection.close()
-
+        connection.close()
+        
 @app.route('/api/teacher-count', methods = ['POST'])
 def get_teacher_count():
     try:
