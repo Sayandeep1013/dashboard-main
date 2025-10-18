@@ -973,7 +973,7 @@ def get_students_by_grade_over_time():
     elif grouping == 'weekly':
         period_expr = "CONCAT(YEAR(u.created_at), '-', LPAD(WEEK(u.created_at, 3), 2, '0'))"
     elif grouping == 'monthly':
-        period_expr = "DATE_FORMAT(u.created_at, '%%Y-%%m')"
+        period_expr = "DATE_FORMAT(u.created_at, '%%Y-%%M')"
     elif grouping == 'quarterly':
         period_expr = "CONCAT(YEAR(u.created_at), '-Q', QUARTER(u.created_at))"
     elif grouping == 'yearly':
@@ -981,7 +981,7 @@ def get_students_by_grade_over_time():
     elif grouping == 'lifetime':
         period_expr = "'Lifetime'"
     else:
-        period_expr = "DATE_FORMAT(u.created_at, '%%Y-%%m')"
+        period_expr = "DATE_FORMAT(u.created_at, '%%Y-%%M')"
 
     try:
         connection = get_db_connection()
@@ -1096,7 +1096,7 @@ def get_teachers_by_grade_over_time():
     elif grouping == 'weekly':
         period_expr = "CONCAT(YEAR(u.created_at), '-', LPAD(WEEK(u.created_at, 3), 2, '0'))"
     elif grouping == 'monthly':
-        period_expr = "DATE_FORMAT(u.created_at, '%%Y-%%m')"
+        period_expr = "DATE_FORMAT(u.created_at, '%%Y-%%M')"
     elif grouping == 'quarterly':
         period_expr = "CONCAT(YEAR(u.created_at), '-Q', QUARTER(u.created_at))"
     elif grouping == 'yearly':
@@ -1104,7 +1104,7 @@ def get_teachers_by_grade_over_time():
     elif grouping == 'lifetime':
         period_expr = "'Lifetime'"
     else:
-        period_expr = "DATE_FORMAT(u.created_at, '%%Y-%%m')"
+        period_expr = "DATE_FORMAT(u.created_at, '%%Y-%M')"
 
     try:
         connection = get_db_connection()
@@ -1707,7 +1707,7 @@ def get_histogram_data_level_subject_challenges_complete():
         period_expressions = {
             'daily': "DATE(lamc.created_at)",
             'weekly': "CONCAT(YEAR(lamc.created_at), '-W', WEEK(lamc.created_at, 1))",
-            'monthly': "DATE_FORMAT(lamc.created_at, '%%Y-%%m')",
+            'monthly': "DATE_FORMAT(lamc.created_at, '%%Y-%%M')",
             'quarterly': "CONCAT(YEAR(lamc.created_at), '-Q', QUARTER(lamc.created_at))",
             'yearly': "CAST(YEAR(lamc.created_at) AS CHAR)",
             'lifetime': "'lifetime'"
@@ -1769,7 +1769,7 @@ def get_histogram_data_level_subject_jigyasa_complete():
         period_expressions = {
             'daily': "DATE(lamc.created_at)",
             'weekly': "CONCAT(YEAR(lamc.created_at), '-W', WEEK(lamc.created_at, 1))",
-            'monthly': "DATE_FORMAT(lamc.created_at, '%%Y-%%m')",
+            'monthly': "DATE_FORMAT(lamc.created_at, '%%Y-%%M')",
             'quarterly': "CONCAT(YEAR(lamc.created_at), '-Q', QUARTER(lamc.created_at))",
             'yearly': "CAST(YEAR(lamc.created_at) AS CHAR)",
             'lifetime': "'lifetime'"
@@ -1830,7 +1830,7 @@ def get_histogram_data_level_subject_pragya_complete():
         period_expressions = {
             'daily': "DATE(lamc.created_at)",
             'weekly': "CONCAT(YEAR(lamc.created_at), '-W', WEEK(lamc.created_at, 1))",
-            'monthly': "DATE_FORMAT(lamc.created_at, '%%Y-%%m')",
+            'monthly': "DATE_FORMAT(lamc.created_at, '%%Y-%%M')",
             'quarterly': "CONCAT(YEAR(lamc.created_at), '-Q', QUARTER(lamc.created_at))",
             'yearly': "CAST(YEAR(lamc.created_at) AS CHAR)",
             'lifetime': "'lifetime'"
@@ -1884,7 +1884,7 @@ def get_histogram_topic_level_subject_quizgames_2():
         period_exprs = {
             'daily': "DATE(laqg.completed_at)",
             'weekly': "CONCAT(YEAR(laqg.completed_at), '-W', WEEK(laqg.completed_at, 1))",
-            'monthly': "DATE_FORMAT(laqg.completed_at, '%%Y-%%m')",
+            'monthly': "DATE_FORMAT(laqg.completed_at, '%%Y-%%M')",
             'quarterly': "CONCAT(YEAR(laqg.completed_at), '-Q', QUARTER(laqg.completed_at))",
             'yearly': "CAST(YEAR(laqg.completed_at) AS CHAR)",
             'lifetime': "'lifetime'"
@@ -1939,7 +1939,7 @@ def mission_points_over_time():
     elif grouping == 'weekly':
         expr = "CONCAT(YEAR(lamc.created_at), '-', LPAD(WEEK(lamc.created_at, 1), 2, '0'))"
     elif grouping == 'monthly':
-        expr = "DATE_FORMAT(lamc.created_at, '%Y-%m')"
+        expr = "DATE_FORMAT(lamc.created_at, '%Y-%M')"
     elif grouping == 'quarterly':
         expr = "CONCAT(YEAR(lamc.created_at), '-Q', QUARTER(lamc.created_at))"
     elif grouping == 'yearly':
@@ -1988,7 +1988,7 @@ def quiz_points_over_time():
     elif grouping == 'weekly':
         expr = "CONCAT(YEAR(created_at), '-', LPAD(WEEK(created_at, 1), 2, '0'))"
     elif grouping == 'monthly':
-        expr = "DATE_FORMAT(created_at, '%Y-%m')"
+        expr = "DATE_FORMAT(created_at, '%Y-%M')"
     elif grouping == 'quarterly':
         expr = "CONCAT(YEAR(created_at), '-Q', QUARTER(created_at))"
     elif grouping == 'yearly':
@@ -2034,7 +2034,7 @@ def jigyasa_points_over_time():
     elif grouping == 'weekly':
         expr = "CONCAT(YEAR(lamc.created_at), '-', LPAD(WEEK(lamc.created_at, 1), 2, '0'))"
     elif grouping == 'monthly':
-        expr = "DATE_FORMAT(lamc.created_at, '%Y-%m')"
+        expr = "DATE_FORMAT(lamc.created_at, '%Y-%M')"
     elif grouping == 'quarterly':
         expr = "CONCAT(YEAR(lamc.created_at), '-Q', QUARTER(lamc.created_at))"
     elif grouping == 'yearly':
@@ -2085,7 +2085,7 @@ def pragya_points_over_time():
     elif grouping == 'weekly':
         expr = "CONCAT(YEAR(lamc.created_at), '-', LPAD(WEEK(lamc.created_at, 1), 2, '0'))"
     elif grouping == 'monthly':
-        expr = "DATE_FORMAT(lamc.created_at, '%Y-%m')"
+        expr = "DATE_FORMAT(lamc.created_at, '%Y-%M')"
     elif grouping == 'quarterly':
         expr = "CONCAT(YEAR(lamc.created_at), '-Q', QUARTER(lamc.created_at))"
     elif grouping == 'yearly':
@@ -2131,7 +2131,7 @@ def coupon_redeems_over_time():
     elif grouping == 'weekly':
         expr = "CONCAT(YEAR(created_at), '-', LPAD(WEEK(created_at, 1), 2, '0'))"
     elif grouping == 'monthly':
-        expr = "DATE_FORMAT(created_at, '%Y-%m')"
+        expr = "DATE_FORMAT(created_at, '%Y-%M')"
     elif grouping == 'quarterly':
         expr = "CONCAT(YEAR(created_at), '-Q', QUARTER(created_at))"
     elif grouping == 'yearly':
@@ -2213,7 +2213,7 @@ def get_demograph_students_2():
         elif grouping == 'weekly':
             period_expr = "CONCAT(YEAR(created_at), '-W', WEEK(created_at, 1))"
         elif grouping == 'monthly':
-            period_expr = "DATE_FORMAT(created_at, '%%Y-%%m')"
+            period_expr = "DATE_FORMAT(created_at, '%%Y-%%M')"
         elif grouping == 'quarterly':
             period_expr = "CONCAT(YEAR(created_at), '-Q', QUARTER(created_at))"
         elif grouping == 'yearly':
@@ -2294,7 +2294,7 @@ def get_teacher_demograph_2():
         elif grouping == 'weekly':
             period_expr = "CONCAT(YEAR(created_at), '-W', WEEK(created_at, 1))"
         elif grouping == 'monthly':
-            period_expr = "DATE_FORMAT(created_at, '%%Y-%%m')"
+            period_expr = "DATE_FORMAT(created_at, '%%Y-%%M')"
         elif grouping == 'quarterly':
             period_expr = "CONCAT(YEAR(created_at), '-Q', QUARTER(created_at))"
         elif grouping == 'yearly':
@@ -3608,7 +3608,7 @@ def student_count_by_level_over_time():
     period_expressions = {
         'daily': "DATE(created_at)",
         'weekly': "CONCAT(YEAR(created_at), '-', LPAD(WEEK(created_at, 3), 2, '0'))",
-        'monthly': "DATE_FORMAT(created_at, '%Y-%m')",
+        'monthly': "DATE_FORMAT(created_at, '%Y-%M')",
         'quarterly': "CONCAT(YEAR(created_at), '-Q', QUARTER(created_at))",
         'yearly': "YEAR(created_at)",
         'lifetime': "'Lifetime'"
@@ -3651,7 +3651,7 @@ def signing_user_gender():
     elif grouping == 'weekly':
         period_expr = "CONCAT(YEAR(created_at), '-', LPAD(WEEK(created_at, 3), 2, '0'))"
     elif grouping == 'monthly':
-        period_expr = "DATE_FORMAT(created_at, '%%Y-%%m')"
+        period_expr = "DATE_FORMAT(created_at, '%%Y-%%M')"
     elif grouping == 'quarterly':
         period_expr = "CONCAT(YEAR(created_at), '-Q', QUARTER(created_at))"
     elif grouping == 'yearly':
@@ -3659,7 +3659,7 @@ def signing_user_gender():
     elif grouping == 'lifetime':
         period_expr = "'Lifetime'"
     else:
-        period_expr = "DATE_FORMAT(created_at, '%%Y-%%m')"
+        period_expr = "DATE_FORMAT(created_at, '%%Y-%M')"
     
     # Build the base query with a WHERE clause that always evaluates to true
     where_clause = "WHERE 1=1"
@@ -3728,7 +3728,7 @@ def get_PBLsubmissions():
     GROUPING_SQL = {
         'daily':     "DATE(lamc.created_at)",
         'weekly':    "DATE_FORMAT(lamc.created_at, '%x-%v')",
-        'monthly':   "DATE_FORMAT(lamc.created_at, '%Y-%m')",
+        'monthly':   "DATE_FORMAT(lamc.created_at, '%Y-%M')",
         'quarterly': "CONCAT(YEAR(lamc.created_at), '-Q', QUARTER(lamc.created_at))",
         'yearly':    "YEAR(lamc.created_at)",
         'lifetime':  "'All Time'"
@@ -3838,7 +3838,7 @@ def vision_completion_stats():
     fmt_map = {
         'daily':     "DATE(a.created_at)",
         'weekly':    "DATE_FORMAT(a.created_at, '%%x-%%v')",
-        'monthly':   "DATE_FORMAT(a.created_at, '%%Y-%%m')",
+        'monthly':   "DATE_FORMAT(a.created_at, '%%Y-%%M')",
         'quarterly': "CONCAT(YEAR(a.created_at), '-Q', QUARTER(a.created_at))",
         'yearly':    "YEAR(a.created_at)",
         'lifetime':  "'lifetime'"
@@ -3935,7 +3935,7 @@ def vision_score_stats():
     fmt_map = {
         'daily':     "DATE(a.created_at)",
         'weekly':    "DATE_FORMAT(a.created_at, '%%x-%%v')",
-        'monthly':   "DATE_FORMAT(a.created_at, '%%Y-%%m')",
+        'monthly':   "DATE_FORMAT(a.created_at, '%%Y-%%M')",
         'quarterly': "CONCAT(YEAR(a.created_at), '-Q', QUARTER(a.created_at))",
         'yearly':    "YEAR(a.created_at)",
         'lifetime':  "'lifetime'"
