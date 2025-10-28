@@ -5808,6 +5808,17 @@ def notify_vision_status(vision_id, user_id, status):
 
 @app.route('/api/vision_sessions', methods=['GET'])
 def fetch_vision_sessions():
+    """
+    Fetches vision question answer sessions with support for:
+    - Filtering by question type (text, image, option/MCQ)
+    - Filtering by assignment type (teacher vs self)
+    - Date range filtering (date_start, date_end)
+    - School code filtering (via schools.code)
+    - Status filtering (requested, approved, rejected)
+
+    MCQ answers are grouped by (vision_id, user_id) to appear as a single row.
+    All filters are applied BEFORE grouping for correctness and to avoid SQL errors.
+    """
     qs = request.args
     page = int(qs.get('page', 1))
     per_page = int(qs.get('per_page', 25))
@@ -5819,183 +5830,201 @@ def fetch_vision_sessions():
     school_codes = qs.getlist('school_codes')
     status_filt = qs.get('status')  # 'requested'|'approved'|'rejected'
 
-    # --- Base SQL for NON-MCQ answers (Text, Image) ---
-    base_sql_non_mcq = '''
+    # --- Build Non-MCQ Query (text, image) ---
+    non_mcq_sql = '''
     SELECT
-      a.id           AS answer_id,
-      v.id           AS vision_id,
+      a.id AS answer_id,
+      v.id AS vision_id,
       JSON_UNQUOTE(JSON_EXTRACT(v.title, '$.en')) AS vision_title,
       JSON_UNQUOTE(JSON_EXTRACT(q.question, '$.en')) AS question_title,
-      u.name         AS user_name,
-      COALESCE(t.name,'self') AS teacher_name,
+      u.name AS user_name,
+      COALESCE(t.name, 'self') AS teacher_name,
       a.answer_text,
       a.answer_option,
-      m.id           AS media_id,
-      m.path         AS media_path,
+      m.id AS media_id,
+      m.path AS media_path,
       a.score,
-      a.answer_type, -- 'text' or 'image'
+      a.answer_type,
       a.status,
       a.approved_at,
       a.rejected_at,
       a.created_at,
-      v.youtube_url  AS vision_youtube_url,
-      NULL           AS user_id, -- Placeholder for MCQ grouping logic
-      NULL           AS representative_answer_id, -- Placeholder for MCQ grouping logic
-      a.comment      AS comment -- Added comment field
-    FROM vision_question_answers a
-    JOIN visions v          ON v.id = a.vision_id
-    JOIN vision_questions q ON q.id = a.question_id
-    JOIN users u            ON u.id = a.user_id
-    LEFT JOIN vision_assigns vs 
-      ON vs.vision_id = a.vision_id 
-     AND vs.student_id = a.user_id
-    LEFT JOIN users t       ON t.id = vs.teacher_id
-    LEFT JOIN media m       ON m.id = a.media_id
-    LEFT JOIN lifeapp.schools s ON s.id = u.school_id
-    WHERE a.answer_type IN ('text', 'image') -- Filter for non-MCQ types only
-    '''
-
-    # --- Base SQL for MCQ answers (for grouping) ---
-    base_sql_mcq = '''
-    SELECT
-      NULL           AS answer_id, -- Placeholder for non-MCQ logic
-      a.vision_id    AS vision_id,
-      JSON_UNQUOTE(JSON_EXTRACT(v.title, '$.en')) AS vision_title,
-      'MCQ Group'    AS question_title, -- Placeholder
-      u.name         AS user_name,
-      COALESCE(t.name,'self') AS teacher_name,
-      NULL           AS answer_text, -- MCQs don't use text directly in main table
-      'See MCQ Answers' AS answer_option, -- Placeholder text or indicator
-      NULL           AS media_id, -- MCQs don't use media directly in main table
-      NULL           AS media_path, -- MCQs don't use media directly in main table
-      MAX(a.score)   AS score, -- Assuming score is consistent per MCQ group or take max
-      'mcq'          AS answer_type, -- Explicitly mark as MCQ group type
-      MAX(a.status)  AS status, -- Assuming status is consistent or take max
-      MAX(a.approved_at) AS approved_at, -- Use max for display
-      MAX(a.rejected_at) AS rejected_at, -- Use max for display
-      MAX(a.created_at)  AS created_at, -- Use max for display and ordering
-      v.youtube_url  AS vision_youtube_url,
-      a.user_id      AS user_id, -- Needed for MCQ modal lookup
-      MAX(a.id)      AS representative_answer_id, -- Use max ID for actions (status/score)
-      MAX(a.comment) AS comment -- Get comment for MCQ group (use max or group concat if needed)
+      v.youtube_url AS vision_youtube_url,
+      NULL AS user_id,
+      NULL AS representative_answer_id,
+      a.comment
     FROM vision_question_answers a
     JOIN visions v ON v.id = a.vision_id
+    JOIN vision_questions q ON q.id = a.question_id
     JOIN users u ON u.id = a.user_id
     LEFT JOIN vision_assigns vs 
-      ON vs.vision_id = a.vision_id 
-     AND vs.student_id = a.user_id
+      ON vs.vision_id = a.vision_id AND vs.student_id = a.user_id
     LEFT JOIN users t ON t.id = vs.teacher_id
+    LEFT JOIN media m ON m.id = a.media_id
     LEFT JOIN lifeapp.schools s ON s.id = u.school_id
-    WHERE a.answer_type = 'option' -- Filter for MCQ type only
-    GROUP BY a.vision_id, a.user_id, v.title, u.name, t.name, v.youtube_url -- Group by session
+    WHERE a.answer_type IN ('text', 'image')
     '''
-
-    # --- Combine Queries using UNION ALL ---
-    combined_sql_parts = []
-    combined_params = []
-
-    # --- Build Non-MCQ Query ---
-    non_mcq_sql = base_sql_non_mcq
     non_mcq_params = []
-    # Apply filters common to non-MCQ
+
+    # Apply filters to non-MCQ
     if assigned_by == 'teacher':
         non_mcq_sql += ' AND vs.teacher_id IS NOT NULL'
     elif assigned_by == 'self':
         non_mcq_sql += ' AND vs.teacher_id IS NULL'
+
     if date_start:
         non_mcq_sql += ' AND DATE(a.created_at) >= %s'
         non_mcq_params.append(date_start)
+
     if date_end:
         non_mcq_sql += ' AND DATE(a.created_at) <= %s'
         non_mcq_params.append(date_end)
+
     if school_codes:
         placeholders = ','.join(['%s'] * len(school_codes))
-        non_mcq_sql += f' AND u.school_code IN ({placeholders})'
+        non_mcq_sql += f' AND s.code IN ({placeholders})'
         non_mcq_params.extend(school_codes)
-    # Apply ordering to non-MCQ part
-    non_mcq_sql += ' ORDER BY created_at DESC'
-    # Add non-MCQ part to combined query if needed
-    if qtype != 'option': # If qtype is 'option', we don't want non-MCQ rows
-        combined_sql_parts.append(f"({non_mcq_sql})")
-        combined_params.extend(non_mcq_params)
 
-    # --- Build MCQ Query ---
-    mcq_sql = base_sql_mcq
+    non_mcq_sql += ' ORDER BY a.created_at DESC'
+
+    # --- Build MCQ Query using derived table (to avoid MAX in WHERE) ---
+    mcq_sql = '''
+    SELECT
+      NULL AS answer_id,
+      grouped.vision_id,
+      JSON_UNQUOTE(JSON_EXTRACT(v.title, '$.en')) AS vision_title,
+      'MCQ Group' AS question_title,
+      u.name AS user_name,
+      COALESCE(t.name, 'self') AS teacher_name,
+      NULL AS answer_text,
+      'See MCQ Answers' AS answer_option,
+      NULL AS media_id,
+      NULL AS media_path,
+      MAX(grouped.score) AS score,
+      'mcq' AS answer_type,
+      MAX(grouped.status) AS status,
+      MAX(grouped.approved_at) AS approved_at,
+      MAX(grouped.rejected_at) AS rejected_at,
+      MAX(grouped.created_at) AS created_at,
+      v.youtube_url AS vision_youtube_url,
+      grouped.user_id,
+      MAX(grouped.id) AS representative_answer_id,
+      MAX(grouped.comment) AS comment
+    FROM (
+      SELECT
+        a.id,
+        a.vision_id,
+        a.user_id,
+        a.score,
+        a.status,
+        a.approved_at,
+        a.rejected_at,
+        a.created_at,
+        a.comment,
+        vs.teacher_id
+      FROM vision_question_answers a
+      JOIN users u_inner ON u_inner.id = a.user_id
+      LEFT JOIN vision_assigns vs 
+        ON vs.vision_id = a.vision_id AND vs.student_id = a.user_id
+      LEFT JOIN lifeapp.schools s_inner ON s_inner.id = u_inner.school_id
+      WHERE a.answer_type = 'option'
+    '''
+
     mcq_params = []
-    # Apply filters common to MCQ (grouped)
+
+    # Apply filters INSIDE derived table (before grouping)
     if assigned_by == 'teacher':
         mcq_sql += ' AND vs.teacher_id IS NOT NULL'
     elif assigned_by == 'self':
         mcq_sql += ' AND vs.teacher_id IS NULL'
+
     if date_start:
-        mcq_sql += ' AND DATE(MAX(a.created_at)) >= %s' # Use MAX for grouped date
+        mcq_sql += ' AND DATE(a.created_at) >= %s'
         mcq_params.append(date_start)
+
     if date_end:
-        mcq_sql += ' AND DATE(MAX(a.created_at)) <= %s' # Use MAX for grouped date
+        mcq_sql += ' AND DATE(a.created_at) <= %s'
         mcq_params.append(date_end)
+
     if school_codes:
         placeholders = ','.join(['%s'] * len(school_codes))
-        mcq_sql += f' AND u.school_code IN ({placeholders})'
+        mcq_sql += f' AND s_inner.code IN ({placeholders})'
         mcq_params.extend(school_codes)
-    # Apply ordering to MCQ part
-    mcq_sql += ' ORDER BY MAX(a.created_at) DESC' # Use MAX for grouped ordering
-    # Add MCQ part to combined query if needed
-    if qtype != 'text' and qtype != 'image': # If qtype is 'text' or 'image', we don't want MCQ rows
-        combined_sql_parts.append(f"({mcq_sql})")
-        combined_params.extend(mcq_params)
 
-    # --- Combine and Finalize Query ---
-    if not combined_sql_parts:
-        # Handle case where both parts might be empty due to filters
-        final_sql = "SELECT NULL AS answer_id, NULL AS vision_id, NULL AS vision_title, NULL AS question_title, NULL AS user_name, NULL AS teacher_name, NULL AS answer_text, NULL AS answer_option, NULL AS media_id, NULL AS media_path, NULL AS score, NULL AS answer_type, NULL AS status, NULL AS approved_at, NULL AS rejected_at, NULL AS created_at, NULL AS vision_youtube_url, NULL AS user_id, NULL AS representative_answer_id, NULL AS comment FROM DUAL WHERE FALSE"
+    # Close derived table and complete outer query
+    mcq_sql += '''
+    ) AS grouped
+    JOIN visions v ON v.id = grouped.vision_id
+    JOIN users u ON u.id = grouped.user_id
+    LEFT JOIN users t ON t.id = grouped.teacher_id
+    GROUP BY grouped.vision_id, grouped.user_id, v.title, u.name, t.name, v.youtube_url
+    ORDER BY MAX(grouped.created_at) DESC
+    '''
+
+    # --- Combine queries conditionally ---
+    combined_parts = []
+    all_params = []  # Holds parameters for inner UNION queries (non-MCQ + MCQ)
+
+    if qtype != 'option':
+        combined_parts.append(f"({non_mcq_sql})")
+        all_params.extend(non_mcq_params)
+
+    if qtype not in ('text', 'image'):
+        combined_parts.append(f"({mcq_sql})")
+        all_params.extend(mcq_params)
+
+    # Handle case where no query parts are selected
+    if not combined_parts:
+        final_sql = """
+            SELECT NULL AS answer_id, NULL AS vision_id, NULL AS vision_title,
+                   NULL AS question_title, NULL AS user_name, NULL AS teacher_name,
+                   NULL AS answer_text, NULL AS answer_option, NULL AS media_id,
+                   NULL AS media_path, NULL AS score, NULL AS answer_type,
+                   NULL AS status, NULL AS approved_at, NULL AS rejected_at,
+                   NULL AS created_at, NULL AS vision_youtube_url, NULL AS user_id,
+                   NULL AS representative_answer_id, NULL AS comment
+            FROM DUAL WHERE FALSE
+        """
         final_params = []
     else:
-        # Combine the parts with UNION ALL
-        inner_combined_sql = " UNION ALL ".join(combined_sql_parts)
+        inner_union = " UNION ALL ".join(combined_parts)
 
-        # --- Apply OUTER FILTERS ---
-        # Apply the status filter at the outer level to the combined results
-        outer_filter_conditions = []
-        outer_filter_params = []
+        # Build outer WHERE clause for status and precise answer_type
+        outer_where_parts = []
+        outer_params = []
+
         if status_filt in ('requested', 'approved', 'rejected'):
-             # Important: Filter based on the 'status' column of the combined result set
-             outer_filter_conditions.append(" combined_results.status = %s ")
-             outer_filter_params.append(status_filt)
+            outer_where_parts.append("combined_results.status = %s")
+            outer_params.append(status_filt)
 
-        # Apply the question type filter at the outer level
-        outer_qtype_conditions = []
-        outer_qtype_params = []
         if qtype == 'option':
-             # Show only MCQ groups
-             outer_qtype_conditions.append(" combined_results.answer_type = 'mcq' ")
+            outer_where_parts.append("combined_results.answer_type = 'mcq'")
         elif qtype in ('text', 'image'):
-             # Show only non-MCQ types matching the filter
-             outer_qtype_conditions.append(" combined_results.answer_type = %s ")
-             outer_qtype_params.append(qtype)
-        # If qtype is empty, show all types (no outer filter needed for qtype)
+            outer_where_parts.append("combined_results.answer_type = %s")
+            outer_params.append(qtype)
 
-        # Construct the final WHERE clause
         outer_where_clause = ""
-        all_outer_params = []
-        if outer_filter_conditions or outer_qtype_conditions:
-            outer_conditions = []
-            if outer_filter_conditions:
-                outer_conditions.append(" AND ".join(outer_filter_conditions))
-                all_outer_params.extend(outer_filter_params)
-            if outer_qtype_conditions:
-                outer_conditions.append(" AND ".join(outer_qtype_conditions))
-                all_outer_params.extend(outer_qtype_params)
-            outer_where_clause = " WHERE " + " AND ".join(outer_conditions)
+        if outer_where_parts:
+            outer_where_clause = " WHERE " + " AND ".join(outer_where_parts)
 
-        # Add final ordering and pagination at the outermost level
-        final_sql = f"SELECT * FROM ({inner_combined_sql}) AS combined_results {outer_where_clause} ORDER BY created_at DESC LIMIT %s OFFSET %s"
-        final_params = all_outer_params + [per_page, offset]
+        # Final query wraps the UNION and applies outer filters + pagination
+        final_sql = f"""
+            SELECT * FROM ({inner_union}) AS combined_results
+            {outer_where_clause}
+            ORDER BY created_at DESC
+            LIMIT %s OFFSET %s
+        """
 
+        # CRITICAL FIX: Combine all parameter lists in correct order:
+        # - all_params: for inner non-MCQ and MCQ queries
+        # - outer_params: for outer WHERE clause
+        # - pagination: per_page, offset
+        final_params = all_params + outer_params + [per_page, offset]
+
+    # --- Execute and enrich results ---
     conn = get_db_connection()
     try:
         with conn.cursor() as cursor:
-            # print("Executing SQL:", final_sql) # Debug print
-            # print("With Params:", final_params) # Debug print
             cursor.execute(final_sql, final_params)
             rows = cursor.fetchall()
 
@@ -6004,25 +6033,27 @@ def fetch_vision_sessions():
             if r.get('media_path'):
                 r['media_url'] = f"{base_url}/{r['media_path']}"
             else:
-                 r['media_url'] = None
+                r['media_url'] = None
+
             if r.get('answer_type') == 'mcq':
-                 r['answer_text'] = None
-                 r['media_url'] = None
+                r['answer_text'] = None
+                r['media_url'] = None
 
         return jsonify({
             'page': page,
             'per_page': per_page,
             'data': rows
         }), 200
+
     except Exception as e:
-        print(f"Error fetching vision sessions: {e}")
+        print(f"Error in fetch_vision_sessions: {e}")
         import traceback
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500
+
     finally:
         conn.close()
-
-
+        
 # --- NEW API ENDPOINT: Fetch Full Vision Details for Modal ---
 @app.route('/api/vision_details/<int:vision_id>', methods=['GET'])
 def get_vision_details(vision_id):
