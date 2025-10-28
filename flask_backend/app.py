@@ -194,82 +194,84 @@ def upload_media(file):
 
 
 def build_filter_conditions(request_args=None):
-    """Build SQL WHERE conditions and parameters based on global filters"""
+    """
+    Build SQL WHERE conditions and parameters based on global filters.
+    Columns are **NOT** prefixed with table alias so they work in every
+    query that already joins `users`.
+    """
     if request_args is None:
         request_args = request.args
-    
+
     conditions = []
-    params = []
-    
-    # State filter
+    params     = []
+
+    # State
     state = request_args.get('state')
     if state and state != 'All':
-        conditions.append("u.state = %s")
+        conditions.append("state = %s")
         params.append(state)
-    
-    # City filter  
+
+    # City
     city = request_args.get('city')
     if city and city != 'All':
-        conditions.append("u.city = %s")
+        conditions.append("city = %s")
         params.append(city)
-    
-    # School code filter - NEW LOGIC
+
+    # School code
     school_code = request_args.get('school_code')
     if school_code and school_code != 'All' and str(school_code).strip():
-        # For students (type 3), they have school_code directly
-        # For non-students, we need to find school_id from schools table
         conditions.append("""
-            (u.school_code = %s OR 
-             (u.type != 3 AND u.school_id IN (
+            (school_code = %s OR
+             (type != 3 AND school_id IN (
                  SELECT id FROM lifeapp.schools WHERE code = %s
              )))
         """)
         params.extend([str(school_code).strip(), str(school_code).strip()])
-    
-    # User type filter
+
+    # User type
     user_type = request_args.get('user_type')
     if user_type and user_type != 'All':
-        if user_type == 'Student':
-            conditions.append("u.type = 3")
-        elif user_type == 'Teacher':
-            conditions.append("u.type = 5")
-        elif user_type == 'Mentor':
-            conditions.append("u.type = 4")
-        elif user_type == 'Unspecified':
-            conditions.append("(u.type NOT IN (1,3,4,5) OR u.type IS NULL)")
-    
-    # Grade filter
+        type_map = {
+            'Admin': 1, 'Student': 3, 'Mentor': 4, 'Teacher': 5
+        }
+        if user_type == 'Unspecified':
+            conditions.append("(type NOT IN (1,3,4,5) OR type IS NULL)")
+        elif user_type in type_map:
+            conditions.append("type = %s")
+            params.append(type_map[user_type])
+
+    # Grade
     grade = request_args.get('grade')
     if grade and grade != 'All':
         grade_num = grade.replace('Grade ', '')
         if grade_num.isdigit():
-            conditions.append("u.grade = %s")
+            conditions.append("grade = %s")
             params.append(int(grade_num))
-    
-    # Gender filter
+
+    # Gender
     gender = request_args.get('gender')
     if gender and gender != 'All':
         if gender == 'Male':
-            conditions.append("u.gender = 1")
+            conditions.append("gender = 1")
         elif gender == 'Female':
-            conditions.append("u.gender = 2")
+            conditions.append("gender = 2")
         elif gender == 'Other':
-            conditions.append("u.gender NOT IN (1, 2)")
-    
-    # Date range filter
+            conditions.append("gender NOT IN (1, 2)")
+
+    # Date range
     date_range = request_args.get('date_range')
     if date_range and date_range != 'All':
         if date_range == 'last7days':
-            conditions.append("u.created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)")
+            conditions.append("created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)")
         elif date_range == 'last30days':
-            conditions.append("u.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)")
+            conditions.append("created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)")
         elif date_range == 'last3months':
-            conditions.append("u.created_at >= DATE_SUB(NOW(), INTERVAL 3 MONTH)")
+            conditions.append("created_at >= DATE_SUB(NOW(), INTERVAL 3 MONTH)")
         elif date_range == 'last6months':
-            conditions.append("u.created_at >= DATE_SUB(NOW(), INTERVAL 6 MONTH)")
+            conditions.append("created_at >= DATE_SUB(NOW(), INTERVAL 6 MONTH)")
         elif date_range == 'lastyear':
-            conditions.append("u.created_at >= DATE_SUB(NOW(), INTERVAL 1 YEAR)")
-    
+            conditions.append("created_at >= DATE_SUB(NOW(), INTERVAL 1 YEAR)")
+
     where_clause = " AND ".join(conditions) if conditions else "1=1"
     return where_clause, params
 
@@ -296,6 +298,8 @@ def execute_query(query: str, params: tuple = None) -> List[Dict[str, Any]]:
     finally:
         if connection:
             connection.close()
+
+# ======================== Graph Section ========================
 
 @app.route('/api/signing-user', methods=['POST'])
 def get_user_signups2():
@@ -353,8 +357,12 @@ def get_user_signups2():
 
         # Add global filter: gender
         if filters.get('gender') and filters['gender'] != 'All':
-            base_query += " AND gender = %s"
-            params.append(filters['gender'])
+            if filters['gender'] == 'Male':
+                base_query += " AND gender = '1'"
+            elif filters['gender'] == 'Female':
+                base_query += " AND gender = '2'"
+            elif filters['gender'] == 'Other':
+                base_query += " AND (gender IS NULL OR gender NOT IN ('1', '2'))"
 
         # Add global filter: user_type (override the existing user_type logic)
         filter_user_type = filters.get('user_type', user_type)
@@ -439,6 +447,120 @@ def get_user_signups2():
     except Exception as e:
         logger.error(f"Error in get_user_signups: {str(e)}")
         return jsonify({"error": str(e)}), 500
+
+@app.route('/api/signing-user-gender', methods=['POST'])
+def signing_user_gender():
+    req = request.get_json() or {}
+    grouping = req.get('grouping', 'monthly')
+    user_type = req.get('user_type', 'All')
+
+    # Period expression
+    date_formats = {
+        'daily': "DATE_FORMAT(created_at, '%%Y-%%m-%%d')",
+        'weekly': "DATE_FORMAT(created_at, '%%Y-%%u')",
+        'monthly': "DATE_FORMAT(created_at, '%%Y-%%m')",
+        'quarterly': "CONCAT(YEAR(created_at), '-Q', QUARTER(created_at))",
+        'yearly': "YEAR(created_at)",
+        'lifetime': "'Lifetime'"
+    }
+    if grouping not in date_formats:
+        return jsonify({"error": "Invalid grouping"}), 400
+    period_expr = date_formats[grouping]
+
+    # Start building query
+    base_query = f"""
+        SELECT 
+            {period_expr} AS period,
+            CASE
+                WHEN gender = '1' THEN 'Male'
+                WHEN gender = '2' THEN 'Female'
+                ELSE 'Unspecified'
+            END AS gender_label,
+            COUNT(*) AS count
+        FROM lifeapp.users 
+        WHERE 1=1
+    """
+    params = []
+
+    # === Apply GLOBAL FILTERS ===
+    # State
+    if req.get('state') and req['state'] != 'All':
+        base_query += " AND state = %s"
+        params.append(req['state'])
+
+    # City
+    if req.get('city') and req['city'] != 'All':
+        base_query += " AND city = %s"
+        params.append(req['city'])
+
+    # School code
+    if req.get('school_code') and req['school_code'] != 'All':
+        sc = str(req['school_code']).strip()
+        if sc:
+            base_query += " AND school_code = %s"
+            params.append(sc)
+
+    # User type
+    if user_type and user_type != 'All':
+        type_map = {'Admin': 1, 'Student': 3, 'Mentor': 4, 'Teacher': 5}
+        if user_type == 'Unspecified':
+            base_query += " AND (type NOT IN (1,3,4,5) OR type IS NULL)"
+        elif user_type in type_map:
+            base_query += " AND type = %s"
+            params.append(type_map[user_type])
+
+    # Grade
+    if req.get('grade') and req['grade'] != 'All':
+        grade_num = req['grade'].replace('Grade ', '')
+        if grade_num.isdigit():
+            base_query += " AND grade = %s"
+            params.append(int(grade_num))
+
+    # Gender filter (from global filters)
+    if req.get('gender') and req['gender'] != 'All':
+        if req['gender'] == 'Male':
+            base_query += " AND gender = '1'"
+        elif req['gender'] == 'Female':
+            base_query += " AND gender = '2'"
+        else:
+            base_query += " AND (gender NOT IN ('1','2') OR gender IS NULL)"
+
+    # Date range
+    if req.get('date_range') and req['date_range'] != 'All':
+        dr = req['date_range']
+        if dr == 'last7days':
+            base_query += " AND created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)"
+        elif dr == 'last30days':
+            base_query += " AND created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)"
+        elif dr == 'last3months':
+            base_query += " AND created_at >= DATE_SUB(NOW(), INTERVAL 3 MONTH)"
+        elif dr == 'last6months':
+            base_query += " AND created_at >= DATE_SUB(NOW(), INTERVAL 6 MONTH)"
+        elif dr == 'lastyear':
+            base_query += " AND created_at >= DATE_SUB(NOW(), INTERVAL 1 YEAR)"
+
+    # Custom date range
+    if req.get('start_date') and req.get('end_date'):
+        base_query += " AND created_at >= %s"
+        base_query += " AND created_at <= %s"
+        params.extend([req['start_date'], req['end_date']])
+
+    # Finalize query
+    base_query += " GROUP BY period, gender_label ORDER BY period"
+    result = execute_query(base_query, tuple(params))
+
+    # Pivot to { period, Male, Female, Unspecified }
+    data_by_period = {}
+    for row in result:
+        p = row['period']
+        g = row['gender_label']
+        c = row['count']
+        if p not in data_by_period:
+            data_by_period[p] = {'period': p, 'Male': 0, 'Female': 0, 'Unspecified': 0}
+        data_by_period[p][g] = c
+
+    return jsonify({'data': list(data_by_period.values())})
+
 
 @app.route('/api/user-signups', methods=['GET'])
 def get_user_signups():
@@ -3588,87 +3710,6 @@ def student_count_by_level_over_time():
         if connection:
             connection.close()
     
-@app.route('/api/signing-user-gender', methods=['POST'])
-def signing_user_gender():
-    # Get grouping and user_type from the request; default grouping is 'monthly'
-    req = request.get_json()
-    grouping = req.get('grouping', 'monthly')
-    user_type = req.get('user_type', 'All')  # Add the user_type parameter
-    
-    # Choose the SQL expression for grouping based on the given filter,
-    # doubling the percent signs to escape them for the query execution.
-    if grouping == 'daily':
-        period_expr = "DATE(created_at)"
-    elif grouping == 'weekly':
-        period_expr = "CONCAT(YEAR(created_at), '-', LPAD(WEEK(created_at, 3), 2, '0'))"
-    elif grouping == 'monthly':
-        period_expr = "DATE_FORMAT(created_at, '%%Y-%%M')"
-    elif grouping == 'quarterly':
-        period_expr = "CONCAT(YEAR(created_at), '-Q', QUARTER(created_at))"
-    elif grouping == 'yearly':
-        period_expr = "YEAR(created_at)"
-    elif grouping == 'lifetime':
-        period_expr = "'Lifetime'"
-    else:
-        period_expr = "DATE_FORMAT(created_at, '%%Y-%M')"
-    
-    # Build the base query with a WHERE clause that always evaluates to true
-    where_clause = "WHERE 1=1"
-    params = []
-    
-    # Add the user type filter if it's not 'All'
-    if user_type and user_type != 'All':
-        type_map = {
-            'Admin': 1,
-            'Student': 3,
-            'Mentor': 4,
-            'Teacher': 5,
-            # For 'Unspecified', we capture those not matching known types or NULL.
-            'Unspecified': None
-        }
-        if user_type in type_map:
-            if user_type == 'Unspecified':
-                where_clause += " AND (type NOT IN (1,3,4,5) OR type IS NULL)"
-            else:
-                where_clause += " AND type = %s"
-                params.append(type_map[user_type])
-    
-    # Build the final SQL query with the user type filter in place.
-    sql = f"""
-        SELECT {period_expr} AS period,
-               CASE
-                 WHEN gender = 0 THEN 'Male'
-                 WHEN gender = 1 THEN 'Female'
-                 ELSE 'Unspecified'
-               END as gender_label,
-               COUNT(*) AS count
-        FROM lifeapp.users
-        {where_clause}
-        GROUP BY period, gender_label
-        ORDER BY period
-    """
-    
-    db = get_db_connection()
-    try:
-        with db.cursor() as cursor:
-            cursor.execute(sql, tuple(params))
-            results = cursor.fetchall()
-    finally:
-        db.close()
-    
-    # Transform the result into an array of objects where each record is:
-    # { period: ..., Male: <count>, Female: <count>, Unspecified: <count> }
-    data_by_period = {}
-    for row in results:
-        period = row['period']
-        gender = row['gender_label']
-        count = row['count']
-        if period not in data_by_period:
-            data_by_period[period] = {'period': period, 'Male': 0, 'Female': 0, 'Unspecified': 0}
-        data_by_period[period][gender] = count
-    
-    return jsonify({'data': list(data_by_period.values())})
-
 @app.route('/api/PBLsubmissions', methods=['POST'])
 def get_PBLsubmissions():
     payload = request.get_json() or {}
