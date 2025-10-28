@@ -92,11 +92,11 @@ import { Sidebar } from "@/components/ui/sidebar";
 import { Inter } from "next/font/google";
 const inter = Inter({ subsets: ["latin"] });
 
-const api_startpoint = "http://localhost:5000";
+// const api_startpoint = "http://localhost:5000";
 // const api_startpoint = 'https://lifeapp-api-vv1.vercel.app'
 // const api_startpoint = "http://152.42.239.141:5000";
 // const api_startpoint = "http://152.42.239.141:5000";
-// const api_startpoint = "https://admin-api.life-lab.org";
+const api_startpoint = "https://admin-api.life-lab.org";
 
 interface userTypeChart {
   count: number;
@@ -3342,6 +3342,7 @@ export default function UserAnalyticsDashboard() {
               grouping: quizGrouping,
               subject:
                 selectedQuizSubject === "all" ? null : selectedQuizSubject,
+                ...buildFilterParams(appliedFilters),
             }),
           }
         );
@@ -3355,7 +3356,7 @@ export default function UserAnalyticsDashboard() {
       }
     };
     fetchQuizData();
-  }, [quizGrouping, selectedQuizSubject]);
+  }, [quizGrouping, selectedQuizSubject, appliedFilters]);
 
   const groupedByPeriodQuiz: Record<string, Record<string, number>> = {};
   quizData.forEach((item) => {
@@ -3543,7 +3544,10 @@ export default function UserAnalyticsDashboard() {
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ grouping: pointsMissionGrouping }),
+            body: JSON.stringify({
+              grouping: pointsMissionGrouping,
+              ...buildFilterParams(appliedFilters),
+            }),
           }
         );
         const json = await res.json();
@@ -3556,7 +3560,7 @@ export default function UserAnalyticsDashboard() {
       }
     };
     fetchPoints();
-  }, [pointsMissionGrouping]);
+  }, [pointsMissionGrouping, appliedFilters]); //  add appliedFilters
 
   const pointsMissionCoinSeries = {
     name: "Points",
@@ -3630,7 +3634,9 @@ export default function UserAnalyticsDashboard() {
         const res = await fetch(`${api_startpoint}/api/quiz-points-over-time`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ grouping: pointsQuizGrouping }),
+          body: JSON.stringify({ grouping: pointsQuizGrouping,
+            ...buildFilterParams(appliedFilters),
+           }),
         });
         const json = await res.json();
         setPointsQuizData(Array.isArray(json.data) ? json.data : []);
@@ -3642,7 +3648,7 @@ export default function UserAnalyticsDashboard() {
       }
     };
     fetchPoints();
-  }, [pointsQuizGrouping]);
+  }, [pointsQuizGrouping, appliedFilters]);
 
   const pointsQuizCoinSeries = {
     name: "Points",
@@ -3718,7 +3724,9 @@ export default function UserAnalyticsDashboard() {
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ grouping: pointsJigyasaGrouping }),
+            body: JSON.stringify({ 
+              grouping: pointsJigyasaGrouping,
+              ...buildFilterParams(appliedFilters),}),
           }
         );
         const json = await res.json();
@@ -3731,7 +3739,7 @@ export default function UserAnalyticsDashboard() {
       }
     };
     fetchPoints();
-  }, [pointsJigyasaGrouping]);
+  }, [pointsJigyasaGrouping, appliedFilters]);
 
   const pointsJigyasaCoinSeries = {
     name: "Points",
@@ -3807,7 +3815,9 @@ export default function UserAnalyticsDashboard() {
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ grouping: pointsPragyaGrouping }),
+            body: JSON.stringify({ 
+              grouping: pointsPragyaGrouping,
+              ...buildFilterParams(appliedFilters),}),
           }
         );
         const json = await res.json();
@@ -3820,7 +3830,7 @@ export default function UserAnalyticsDashboard() {
       }
     };
     fetchPoints();
-  }, [pointsPragyaGrouping]);
+  }, [pointsPragyaGrouping, appliedFilters]);
 
   const pointsPragyaCoinSeries = {
     name: "Points",
@@ -3893,13 +3903,16 @@ export default function UserAnalyticsDashboard() {
     fetch(`${api_startpoint}/api/coupon-redeems-over-time`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ grouping: couponRedeemsGrouping }),
+      body: JSON.stringify({ 
+      grouping: couponRedeemsGrouping, 
+      ...buildFilterParams(appliedFilters),
+    }),
     })
       .then((res) => res.json())
       .then((json) => setCouponRedeemsData(Array.isArray(json.data) ? json.data : []))
       .catch(console.error)
       .finally(() => setCouponRedeemsLoading(false));
-  }, [couponRedeemsGrouping]);
+  }, [couponRedeemsGrouping, appliedFilters]);
 
   const CouponRedeemsSeries = {
     name: "Coins",
@@ -3971,6 +3984,7 @@ export default function UserAnalyticsDashboard() {
             body: JSON.stringify({
               grouping: studentGrouping,
               state: selectedState,
+              ...buildFilterParams(appliedFilters),
             }),
           }
         );
@@ -3984,7 +3998,7 @@ export default function UserAnalyticsDashboard() {
       }
     };
     fetchStudentData();
-  }, [studentGrouping, selectedState]);
+  }, [studentGrouping, selectedState, appliedFilters]);
 
   const groupedByPeriodStudent: Record<string, Record<string, number>> = {};
   studentData.forEach((item) => {
@@ -4109,6 +4123,7 @@ export default function UserAnalyticsDashboard() {
             body: JSON.stringify({
               grouping: teacherGrouping,
               state: selectedTeacherState,
+              ...buildFilterParams(appliedFilters),
             }),
           }
         );
@@ -4122,7 +4137,7 @@ export default function UserAnalyticsDashboard() {
       }
     };
     fetchTeacherData();
-  }, [teacherGrouping, selectedTeacherState]);
+  }, [teacherGrouping, selectedTeacherState, appliedFilters]);
 
   const groupedByPeriodTeacher: Record<string, Record<string, number>> = {};
   teacherData.forEach((item) => {
@@ -4225,13 +4240,14 @@ export default function UserAnalyticsDashboard() {
       setSchoolLoading(true);
       try {
         const response = await fetch(
-          `${api_startpoint}/api/demograph-schools`,
+          `${api_startpoint}/api/demograph-schools-main-dashboard`,
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               grouping: schoolGrouping,
               state: selectedSchoolState,
+              ...buildFilterParams(appliedFilters),
             }),
           }
         );
@@ -4245,7 +4261,7 @@ export default function UserAnalyticsDashboard() {
       }
     };
     fetchSchoolData();
-  }, [schoolGrouping, selectedSchoolState]);
+  }, [schoolGrouping, selectedSchoolState, appliedFilters]);
 
   const groupedByPeriodSchool: Record<string, Record<string, number>> = {};
   schoolData.forEach((item) => {
@@ -4371,6 +4387,7 @@ export default function UserAnalyticsDashboard() {
       body: JSON.stringify({
         grouping: groupingLevel,
         levels: levelsToFetch,
+        ...buildFilterParams(appliedFilters),
       }),
     })
       .then((r) => r.json())
@@ -4385,7 +4402,7 @@ export default function UserAnalyticsDashboard() {
       })
       .catch(console.error)
       .finally(() => setLoadingLevel(false));
-  }, [groupingLevel, selectedLevel]);
+  }, [groupingLevel, selectedLevel, appliedFilters]);
 
   const levelColors: Record<Level, string> = {
     level1: "#1E3A8A",
@@ -4671,11 +4688,15 @@ export default function UserAnalyticsDashboard() {
   useEffect(() => {
     setLoadingPBL(true);
     const filterParams = buildFilterParams(appliedFilters);
-    fetch(`${api_startpoint}/api/PBLsubmissions?${toQueryString(filterParams)}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ grouping: groupingPBL, status: statusPBL }),
-    })
+        fetch(`${api_startpoint}/api/PBLsubmissions`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            grouping: groupingPBL,
+            status: statusPBL,
+            ...buildFilterParams(appliedFilters),
+          }),
+        })
       .then((res) => res.json())
       .then((json) => {
         setDataPBL(Array.isArray(json.data) ? json.data : []);
@@ -4859,7 +4880,7 @@ export default function UserAnalyticsDashboard() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         grouping: groupingVisionScore,
-        ...filterParams,
+        ...buildFilterParams(appliedFilters),
       }),
     })
       .then((res) => res.json())
