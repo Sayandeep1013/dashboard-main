@@ -1426,9 +1426,9 @@ def get_teacher_demograph_2():
             for f in ['state', 'city', 'school_code', 'type', 'grade', 'gender']:
                 where_clause = where_clause.replace(f"{f} =", f"u.{f} =")
 
-            # Add student type condition
+            # Add teacher type condition
             if where_clause == "1=1":
-                final_where = "u.type = 3"
+                final_where = "u.type = 5"
             else:
                 final_where = f"u.type = 5 AND {where_clause}"
 
