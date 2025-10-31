@@ -10,13 +10,17 @@ import {
   IconChevronLeft,
   IconChevronRight,
 } from "@tabler/icons-react";
+
+
 const inter = Inter({ subsets: ["latin"] });
+
 
 // const api_startpoint = "http://localhost:5000";
 // const api_startpoint = 'https://lifeapp-api-vv1.vercel.app'
 // const api_startpoint = "http://152.42.239.141:5000";
 // const api_startpoint = "http://152.42.239.141:5000";
 const api_startpoint = "https://admin-api.life-lab.org";
+
 
 // Add CSS styles for the new features
 const tableStyles = `
@@ -62,7 +66,6 @@ const tableStyles = `
     }
   </style>
 `;
-
 // Interfaces for type safety 
 interface SessionRow {
   [key: string]: any;
@@ -116,7 +119,6 @@ interface MCQAnswer {
   options: { [key: string]: string } | null;
   correct_answer: string | null;
 }
-
 export default function VisionSessionsPage() {
   const [rows, setRows] = useState<SessionRow[]>([]);
   const [page, setPage] = useState(1);
@@ -147,7 +149,6 @@ export default function VisionSessionsPage() {
     visionTitle: "",
     userName: "",
   });
-  
 // New state for feedback modal
 const [feedbackModal, setFeedbackModal] = useState<{
   show: boolean;
@@ -162,12 +163,13 @@ const [feedbackModal, setFeedbackModal] = useState<{
   comment: "",
   loading: false,
 });
+// --- NEW: State for total pages ---
+const [totalPages, setTotalPages] = useState(1);
 
   // Refs for table scrolling functionality
   const tableContainerRef = useRef<HTMLDivElement>(null);
   const [showLeftHint, setShowLeftHint] = useState(false);
   const [showRightHint, setShowRightHint] = useState(true);
-
   // Update scroll hints based on current scroll position
   const updateScrollHints = () => {
     const container = tableContainerRef.current;
@@ -177,12 +179,10 @@ const [feedbackModal, setFeedbackModal] = useState<{
       setShowRightHint(scrollLeft < scrollWidth - clientWidth - 10);
     }
   };
-
   // Handle scroll events to show/hide scroll hints
   const handleTableScroll = () => {
     updateScrollHints();
   };
-
   // Scroll table horizontally with larger increments and smooth behavior
   const scrollTableHorizontally = (direction: "left" | "right") => {
     if (tableContainerRef.current) {
@@ -199,7 +199,6 @@ const [feedbackModal, setFeedbackModal] = useState<{
       setTimeout(updateScrollHints, 300);
     }
   };
-
   const fetchSessions = async () => {
     setLoading(true);
     const params = new URLSearchParams();
@@ -218,7 +217,8 @@ const [feedbackModal, setFeedbackModal] = useState<{
       const result = await res.json();
       const sessions = Array.isArray(result.data) ? result.data : [];
       setRows(sessions);
-
+      // --- NEW: Set total pages from API response ---
+      setTotalPages(result.total_pages || 1);
       // Reset scroll hints when new data loads
       setTimeout(() => {
         updateScrollHints();
@@ -336,7 +336,6 @@ const [feedbackModal, setFeedbackModal] = useState<{
       userName: "",
     });
   };
-  
   // New functions for feedback modal
   const openFeedbackModal = (answerId: number, action: "approve" | "reject") => {
     setFeedbackModal({
@@ -347,7 +346,6 @@ const [feedbackModal, setFeedbackModal] = useState<{
       loading: false,
     });
   };
-
   const closeFeedbackModal = () => {
     setFeedbackModal({
       show: false,
@@ -357,12 +355,9 @@ const [feedbackModal, setFeedbackModal] = useState<{
       loading: false,
     });
   };
-
   const handleFeedbackSubmit = async () => {
     if (!feedbackModal.answerId) return;
-    
     setFeedbackModal(prev => ({ ...prev, loading: true }));
-    
     try {
       // Update status with comment
       await fetch(
@@ -378,14 +373,12 @@ const [feedbackModal, setFeedbackModal] = useState<{
           }),
         }
       );
-      
       // If approving, also update score for non-MCQ answers
       if (feedbackModal.action === "approve") {
         const row = rows.find(r => 
           (r.answer_id === feedbackModal.answerId) || 
           (r.representative_answer_id === feedbackModal.answerId)
         );
-        
         if (row && row.answer_type !== "mcq") {
           await fetch(
             `${api_startpoint}/api/vision_sessions/${feedbackModal.answerId}/score`,
@@ -399,17 +392,14 @@ const [feedbackModal, setFeedbackModal] = useState<{
           );
         }
       }
-      
       // Refresh data
       fetchSessions();
-      
       // Show confirmation
       setConfirmationModal({
         show: true,
         type: feedbackModal.action,
         message: `Vision session ${feedbackModal.action === "approve" ? "approved" : "rejected"} successfully!`,
       });
-      
       // Close feedback modal
       closeFeedbackModal();
     } catch (error) {
@@ -419,7 +409,6 @@ const [feedbackModal, setFeedbackModal] = useState<{
       setFeedbackModal(prev => ({ ...prev, loading: false }));
     }
   };
-
   const exportToCSV = () => {
     if (rows.length === 0) {
       alert("No data to export. Please perform a search first.");
@@ -616,7 +605,6 @@ const [feedbackModal, setFeedbackModal] = useState<{
                 >
                   <IconChevronRight size={24} />
                 </button>
-
                 {/* Table with sticky headers and smooth scrolling */}
                 <div
                   ref={tableContainerRef}
@@ -627,6 +615,8 @@ const [feedbackModal, setFeedbackModal] = useState<{
                   <table className="table table-vcenter card-table w-full table-auto min-w-full bg-white border border-gray-200 table-sticky-header">
                     <thead className="table-light">
                       <tr>
+                        {/* --- NEW: Serial No. Column Header --- */}
+                        <th className="text-nowrap">S. No.</th>
                         <th className="text-nowrap">Vision</th>
                         {/* Increased width for Question column */}
                         <th
@@ -652,12 +642,16 @@ const [feedbackModal, setFeedbackModal] = useState<{
                       </tr>
                     </thead>
                     <tbody>
-                      {rows.map((r) => (
+                      {rows.map((r, index) => (
                         <tr
                           key={`${r.answer_id || r.representative_answer_id}-${
                             r.user_id || 0
                           }`}
                         >
+                          {/* --- NEW: Serial Number Cell --- */}
+                          <td className="align-middle text-nowrap">
+                            {(page - 1) * perPage + index + 1}
+                          </td>
                           <td className="align-middle">{r.vision_title}</td>
                           {/* Question column with wider space */}
                           <td
@@ -829,11 +823,12 @@ const [feedbackModal, setFeedbackModal] = useState<{
               >
                 Previous
               </button>
-              <span>Page {page}</span>
+              {/* --- UPDATED: Show Page X/Y --- */}
+              <span>Page {page}/{totalPages}</span>
               <button
                 className="btn btn-primary"
                 onClick={() => setPage((prev) => prev + 1)}
-                disabled={rows.length < perPage}
+                disabled={page >= totalPages}
               >
                 Next
               </button>

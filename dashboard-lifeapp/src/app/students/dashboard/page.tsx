@@ -1576,22 +1576,26 @@ export default function StudentDashboard() {
   );
   const [modalOpen, setModalOpen] = useState<boolean>(false);
   const [grouping, setGrouping] = useState<string>("monthly"); // Default grouping
+  const [missionLevel, setMissionLevel] = useState<"all" | "level1" | "level2" | "level3" | "level4">("all");
 
   // Key improvement: UseEffect to trigger data fetch when grouping changes
   useEffect(() => {
     if (modalOpen) {
-      fetchMissionStatusData(grouping);
+      fetchMissionStatusData(grouping, missionLevel);
     }
-  }, [grouping, modalOpen]);
+  }, [grouping, missionLevel, modalOpen]);
 
-  const fetchMissionStatusData = (selectedGrouping: string) => {
+  const fetchMissionStatusData = (selectedGrouping: string, selectedLevel: string) => {
     setLoading(true);
     setMissionStatusError(null);
 
     fetch(`${api_startpoint}/api/mission-status-graph`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ grouping: selectedGrouping }),
+      body: JSON.stringify({
+        grouping: selectedGrouping,
+        level: selectedLevel === "all" ? undefined : selectedLevel,
+      }),
     })
       .then((response) => {
         if (!response.ok) {
@@ -1600,7 +1604,6 @@ export default function StudentDashboard() {
         return response.json();
       })
       .then((data) => {
-        // Improved data transformation
         const groupedData: Record<string, MissionStatusData> = {};
 
         data.data.forEach((entry: any) => {
@@ -1614,7 +1617,6 @@ export default function StudentDashboard() {
             };
           }
 
-          // Safely map mission status
           switch (entry.mission_status) {
             case "Mission Requested":
               groupedData[period]["Mission Requested"] = entry.count;
@@ -1628,11 +1630,16 @@ export default function StudentDashboard() {
           }
         });
 
-        // Convert to array and sort
         const sortedData = Object.values(groupedData).sort((a, b) => {
-          const [yearA, weekA] = a.period.split("-").map(Number);
-          const [yearB, weekB] = b.period.split("-").map(Number);
-          return yearA !== yearB ? yearA - yearB : weekA - weekB;
+          // Handle 'Lifetime' or non-split periods safely
+          if (a.period === "Lifetime") return -1;
+          if (b.period === "Lifetime") return 1;
+          const partsA = a.period.split("-").map(Number);
+          const partsB = b.period.split("-").map(Number);
+          for (let i = 0; i < Math.min(partsA.length, partsB.length); i++) {
+            if (partsA[i] !== partsB[i]) return partsA[i] - partsB[i];
+          }
+          return partsA.length - partsB.length;
         });
 
         setMissionStatusData(sortedData);
@@ -1643,6 +1650,7 @@ export default function StudentDashboard() {
         setLoading(false);
       });
   };
+
 
   const MissionStatusChartOptions = {
     title: {
@@ -1715,7 +1723,7 @@ export default function StudentDashboard() {
   };
 
   const handleModalOpen = () => {
-    fetchMissionStatusData(grouping);
+    fetchMissionStatusData(grouping, missionLevel);
     setModalOpen(true);
   };
 
@@ -2283,7 +2291,33 @@ export default function StudentDashboard() {
       data: couponRedeemsData.map((d) =>
         formatPeriod(d.period, couponRedeemsGrouping)
       ),
-      axisLabel: { rotate: couponRedeemsGrouping === "daily" ? 45 : 0 },
+      axisLabel: {
+        rotate: couponRedeemsGrouping === "daily" ? 45 : 0,
+        // 👇 Custom formatter for WEEKLY labels
+        formatter: (value: string) => {
+          if (couponRedeemsGrouping !== "weekly") {
+            return value; // fallback for daily/monthly/etc.
+          }
+
+          // Parse "2024-32" → year=2024, week=32
+          const [yearStr, weekStr] = value.split('-');
+          const year = parseInt(yearStr, 10);
+          const week = parseInt(weekStr, 10);
+
+          // Get Jan 1 of the year
+          const jan1 = new Date(year, 0, 1);
+          // Adjust to Monday of week 1 (ISO week: Monday start)
+          const daysOffset = (week - 1) * 7 - (jan1.getDay() + 6) % 7;
+          const weekStart = new Date(jan1.getTime() + daysOffset * 86400000);
+          const weekEnd = new Date(weekStart.getTime() + 6 * 86400000);
+
+          // Format as "Jul 29 – Aug 4"
+          const format = (d: Date) =>
+            d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+
+          return `${format(weekStart)} – ${format(weekEnd)}`;
+        },
+      },
     },
     yAxis: { type: "value", name: "Coins" },
     dataZoom: [
@@ -3244,6 +3278,7 @@ export default function StudentDashboard() {
   const [assignedBy, setAssignedBy] = useState<"all" | "teacher" | "self">(
     "all"
   );
+  const [visionStatus, setVisionStatus] = useState<"all" | "requested" | "approved" | "rejected">("all");
   const [visionLoading, setVisionLoading] = useState(false);
   const [visionCompleteModal, setVisionCompleteModal] = useState(false);
   // Fetch subjects
@@ -3257,26 +3292,43 @@ export default function StudentDashboard() {
       .then((data) => setSubjectList(data));
   }, []);
 
-  // Fetch stats whenever filters change
+
+  // Fetch vision completion statistics whenever filters change
   useEffect(() => {
     setVisionLoading(true);
-    const params = new URLSearchParams({
-      grouping: groupingVision,
-      assigned_by: assignedBy !== "all" ? assignedBy : undefined,
-      subject_id: subjectId ? subjectId.toString() : undefined,
-    } as any);
 
-    fetch(`${api_startpoint}/api/vision-completion-stats?${params}`)
-      .then((res) => res.json())
+    // Build query parameters safely
+    const params = new URLSearchParams();
+    params.append('grouping', groupingVision);
+    if (assignedBy !== 'all') params.append('assigned_by', assignedBy);
+    if (subjectId !== null) params.append('subject_id', subjectId.toString());
+    if (visionStatus !== 'all') params.append('status', visionStatus);
+
+    const url = `${api_startpoint}/api/vision-completion-stats-student-dashboard?${params.toString()}`;
+
+    fetch(url)
+      .then((res) => {
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+        }
+        return res.json();
+      })
       .then((json) => {
-        setStatsVision(json.data);
+        // Validate response structure
+        if (!Array.isArray(json?.data)) {
+          console.warn('Unexpected vision stats response format:', json);
+          setStatsVision([]);
+        } else {
+          setStatsVision(json.data);
+        }
         setVisionLoading(false);
       })
       .catch((err) => {
-        console.error("Failed to fetch vision stats:", err);
+        console.error('Failed to fetch vision stats:', err);
+        setStatsVision([]); // ensure chart doesn't break
         setVisionLoading(false);
       });
-  }, [groupingVision, subjectId, assignedBy]);
+  }, [groupingVision, subjectId, assignedBy, visionStatus]);
 
   const periodsVision = statsVision.map((d) => d.period);
   const levelsVision = Array.from(
@@ -3361,7 +3413,7 @@ export default function StudentDashboard() {
   useEffect(() => {
     setVisionScoreLoading(true);
     const params = new URLSearchParams({ grouping: groupingVisionScore });
-    fetch(`${api_startpoint}/api/vision-score-stats?${params}`)
+    fetch(`${api_startpoint}/api/vision-score-stats-student-dashboard?${params}`)
       .then((res) => res.json())
       .then((json) => {
         setVisionScore(json.data);
@@ -3371,7 +3423,7 @@ export default function StudentDashboard() {
         console.error("Failed to fetch vision scores stats:", err);
         setVisionScoreLoading(false);
       });
-  }, [grouping]);
+  }, [groupingVisionScore]);
 
   const periodsVisionScore = VisionScore.map((d) => d.period);
   const scoresVisionScore = VisionScore.map((d) => d.total_score);
@@ -3887,7 +3939,7 @@ export default function StudentDashboard() {
                   <select
                     value={grouping}
                     onChange={(e) => setGrouping(e.target.value)}
-                    className="mb-4 p-2 border rounded"
+                    className="mb-2 p-2 border rounded"
                   >
                     <option value="daily">Daily</option>
                     <option value="weekly">Weekly</option>
@@ -3895,6 +3947,17 @@ export default function StudentDashboard() {
                     <option value="quarterly">Quarterly</option>
                     <option value="yearly">Yearly</option>
                     <option value="lifetime">Lifetime</option>
+                  </select>
+                  <select
+                    value={missionLevel}
+                    onChange={(e) => setMissionLevel(e.target.value as any)}
+                    className="mb-4 p-2 border rounded"
+                  >
+                    <option value="all">All Levels</option>
+                    <option value="level1">Level 1 (Grades 1–5)</option>
+                    <option value="level2">Level 2 (Grade 6+)</option>
+                    <option value="level3">Level 3 (Grade 7+)</option>
+                    <option value="level4">Level 4 (Grade 8+)</option>
                   </select>
 
                   {/* Loading and Error States */}
@@ -5117,12 +5180,17 @@ export default function StudentDashboard() {
                         <h3 className="card-title mb-0 fw-semibold">
                           Vision Completes Over Time
                         </h3>
-                        {/* Download button */}
                       </div>
                       <div style={{ marginBottom: "20px" }}>
+                        {/* Grouping Selector */}
+                        <label htmlFor="vision-grouping" className="me-2">
+                          Group by:
+                        </label>
                         <select
+                          id="vision-grouping"
                           value={groupingVision}
                           onChange={(e) => setGroupingVision(e.target.value)}
+                          className="border rounded p-1 me-3"
                         >
                           <option value="daily">Daily</option>
                           <option value="weekly">Weekly</option>
@@ -5132,46 +5200,83 @@ export default function StudentDashboard() {
                           <option value="lifetime">Lifetime</option>
                         </select>
 
+                        {/* Subject Filter */}
+                        <label htmlFor="vision-subject" className="me-2">
+                          Subject:
+                        </label>
                         <select
+                          id="vision-subject"
                           value={subjectId ?? ""}
                           onChange={(e) =>
-                            setSubjectId(
-                              e.target.value ? Number(e.target.value) : null
-                            )
+                            setSubjectId(e.target.value ? Number(e.target.value) : null)
                           }
+                          className="border rounded p-1 me-3"
                         >
                           <option value="">All Subjects</option>
                           {subjectList.map((s) => (
                             <option key={s.id} value={s.id}>
-                              {JSON.parse(s.title).en}
+                              {typeof s.title === 'string'
+                                ? JSON.parse(s.title).en
+                                : s.title.en}
                             </option>
                           ))}
                         </select>
 
+                        {/* Assignment Type Filter */}
+                        <label htmlFor="vision-assigned-by" className="me-2">
+                          Assigned by:
+                        </label>
                         <select
+                          id="vision-assigned-by"
                           value={assignedBy}
                           onChange={(e) => setAssignedBy(e.target.value as any)}
+                          className="border rounded p-1 me-3"
                         >
                           <option value="all">All Assignments</option>
                           <option value="self">Self Assigned</option>
                           <option value="teacher">By Teacher</option>
                         </select>
-                        {visionLoading ? (
-                          <div className="text-center">
-                            <div
-                              className="spinner-border text-purple"
-                              role="status"
-                              style={{ width: "8rem", height: "8rem" }}
-                            ></div>
-                          </div>
-                        ) : (
-                          <ReactECharts
-                            ref={chartRef19}
-                            option={optionVision}
-                            style={{ height: "400px", width: "100%" }}
-                          />
-                        )}
+
+                        {/* Status Filter */}
+                        <label htmlFor="vision-status" className="me-2">
+                          Status:
+                        </label>
+                        <select
+                          id="vision-status"
+                          value={visionStatus}
+                          onChange={(e) => setVisionStatus(e.target.value as any)}
+                          className="border rounded p-1"
+                        >
+                          <option value="all">All Statuses</option>
+                          <option value="requested">Requested</option>
+                          <option value="approved">Approved</option>
+                          <option value="rejected">Rejected</option>
+                        </select>
                       </div>
+
+                      {/* Loading, Error, or Chart Rendering */}
+                      {visionLoading ? (
+                        <div className="text-center py-4">
+                          <div
+                            className="spinner-border text-purple"
+                            role="status"
+                            style={{ width: "3rem", height: "3rem" }}
+                          >
+                            <span className="visually-hidden">Loading...</span>
+                          </div>
+                          <p className="mt-2 text-muted">Loading vision data...</p>
+                        </div>
+                      ) : statsVision.length === 0 ? (
+                        <div className="text-center py-4 text-muted">
+                          No vision completion data available for the selected filters.
+                        </div>
+                      ) : (
+                        <ReactECharts
+                          ref={chartRef19}
+                          option={optionVision}
+                          style={{ height: "400px", width: "100%" }}
+                        />
+                      )}
                     </div>
                   </div>
                 </div>

@@ -707,6 +707,8 @@ def vision_completion_stats():
     grouping = filters.get('grouping', 'daily')
     subject_id = filters.get('subject_id')
     assigned_by = filters.get('assigned_by')
+    status_filter = filters.get('status')  # 'requested', 'approved', 'rejected', or 'all'
+
     fmt_map = { 
         'daily':     "DATE(a.created_at)",
         'weekly':    "DATE_FORMAT(a.created_at, '%%x-%%v')",
@@ -724,6 +726,7 @@ def vision_completion_stats():
               {period_expr} AS period,
               JSON_UNQUOTE(JSON_EXTRACT(l.title, '$.en')) AS level_title,
               JSON_UNQUOTE(JSON_EXTRACT(s.title, '$.en')) AS subject_title,
+              a.status,
               COUNT(DISTINCT a.user_id) AS user_count
             FROM lifeapp.vision_question_answers a
             JOIN lifeapp.visions v ON v.id = a.vision_id
@@ -735,6 +738,7 @@ def vision_completion_stats():
             WHERE 1=1
             """
             params = []
+
             if subject_id:
                 sql += " AND v.la_subject_id = %s"
                 params.append(subject_id)
@@ -746,45 +750,75 @@ def vision_completion_stats():
             # Apply global filters
             where_clause, filter_params = build_filter_conditions(filters)
             if where_clause != "1=1":
-                # Robustly prefix all user-related fields with 'u.'
-                # List all possible user fields used in build_filter_conditions
                 user_fields = ['state', 'city', 'school_code', 'type', 'grade', 'gender']
                 for field in user_fields:
-                    # Replace standalone field = ... with u.field = ...
-                    # Use word boundary-like replacement via string checks
                     where_clause = where_clause.replace(f"{field} =", f"u.{field} =")
                 sql += f" AND {where_clause}"
                 params.extend(filter_params)
 
-            sql += " GROUP BY period, l.title, s.title ORDER BY period"
+            # Apply status filter if specified and not 'all'
+            if status_filter and status_filter != 'all':
+                sql += " AND a.status = %s"
+                params.append(status_filter)
+
+            sql += " GROUP BY period, l.title, s.title, a.status ORDER BY period"
             cursor.execute(sql, params)
             rows = cursor.fetchall()
 
-        data = {}
+        # --- Reformat with status breakdown support ---
+        result = {}
         for r in rows:
             period = r['period']
             lvl    = r['level_title']
             subj   = r['subject_title']
+            status = r['status'] or 'requested'  # Treat NULL as 'requested'
             cnt    = r['user_count']
-            data.setdefault(period, {}).setdefault(lvl, {'count': 0, 'subjects': {}})
-            data[period][lvl]['count'] += cnt
-            data[period][lvl]['subjects'][subj] = cnt
+
+            if period not in result:
+                result[period] = {}
+            if lvl not in result[period]:
+                result[period][lvl] = {
+                    'count': 0,
+                    'subjects': {},
+                    'status_breakdown': {'approved': 0, 'rejected': 0, 'requested': 0}
+                }
+            if subj not in result[period][lvl]['subjects']:
+                result[period][lvl]['subjects'][subj] = {
+                    'count': 0,
+                    'status_breakdown': {'approved': 0, 'rejected': 0, 'requested': 0}
+                }
+
+            # Accumulate
+            result[period][lvl]['count'] += cnt
+            result[period][lvl]['status_breakdown'][status] += cnt
+            result[period][lvl]['subjects'][subj]['count'] += cnt
+            result[period][lvl]['subjects'][subj]['status_breakdown'][status] += cnt
 
         formatted = []
-        for period, levels in data.items():
+        for period, levels in result.items():
             formatted.append({
                 'period': period,
                 'levels': [
                     {
-                      'level': lvl,
-                      'count': info['count'],
-                      'subjects': [{'subject': sub, 'count': c} for sub, c in info['subjects'].items()]
+                        'level': lvl,
+                        'count': info['count'],
+                        'status_breakdown': info['status_breakdown'],
+                        'subjects': [
+                            {
+                                'subject': sub,
+                                'count': sub_info['count'],
+                                'status_breakdown': sub_info['status_breakdown']
+                            }
+                            for sub, sub_info in info['subjects'].items()
+                        ]
                     }
                     for lvl, info in levels.items()
                 ]
             })
         return jsonify({'data': formatted}), 200
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         return jsonify({'error': str(e)}), 500
     finally:
         conn.close()
@@ -1143,7 +1177,7 @@ def coupon_redeems_over_time():
         params = filter_params
 
     if grouping != 'lifetime':
-        sql += f" GROUP BY {expr} ORDER BY period ASC"
+        sql += f" GROUP BY period ORDER BY MIN(cr.created_at) ASC"
     else:
         sql += " GROUP BY period"
 
@@ -4890,6 +4924,161 @@ def get_total_missions_completed_assigned_by_teacher_in_students_dashboard():
     finally:
         connection.close()
 
+@app.route('/api/vision-completion-stats-student-dashboard', methods=['GET', 'POST'])
+def vision_completion_stats_student_dashoard():
+    if request.method == 'GET':
+        filters = {
+            'grouping': request.args.get('grouping', 'daily'),
+            'subject_id': request.args.get('subject_id'),
+            'assigned_by': request.args.get('assigned_by'),
+            'status': request.args.get('status')
+        }
+    else:
+        filters = request.get_json() or {}
+
+    grouping = filters.get('grouping', 'daily')
+    subject_id = filters.get('subject_id')
+    assigned_by = filters.get('assigned_by')
+    status_filter = filters.get('status')
+
+    fmt_map = { 
+        'daily':     "DATE(a.created_at)",
+        'weekly':    "DATE_FORMAT(a.created_at, '%%x-%%v')",
+        'monthly':   "DATE_FORMAT(a.created_at, '%%Y-%%M')",
+        'quarterly': "CONCAT(YEAR(a.created_at), '-Q', QUARTER(a.created_at))",
+        'yearly':    "YEAR(a.created_at)",
+        'lifetime':  "'lifetime'" 
+    }
+    period_expr = fmt_map.get(grouping, fmt_map['daily'])
+
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            sql = f"""
+            SELECT
+              {period_expr} AS period,
+              COALESCE(JSON_UNQUOTE(JSON_EXTRACT(l.title, '$.en')), 'Unknown Level') AS level_title,
+              COALESCE(JSON_UNQUOTE(JSON_EXTRACT(s.title, '$.en')), 'Unknown Subject') AS subject_title,
+              a.status,
+              COUNT(DISTINCT a.user_id) AS user_count
+            FROM lifeapp.vision_question_answers a
+            JOIN lifeapp.visions v ON v.id = a.vision_id
+            LEFT JOIN lifeapp.la_levels l ON l.id = v.la_level_id
+            LEFT JOIN lifeapp.la_subjects s ON s.id = v.la_subject_id
+            JOIN lifeapp.users u ON u.id = a.user_id
+            LEFT JOIN lifeapp.vision_assigns vs
+              ON vs.vision_id = a.vision_id AND vs.student_id = a.user_id
+            WHERE 1=1
+            """
+            params = []
+            if subject_id:
+                sql += " AND v.la_subject_id = %s"
+                params.append(subject_id)
+            if assigned_by == 'teacher':
+                sql += " AND vs.teacher_id IS NOT NULL"
+            elif assigned_by == 'self':
+                sql += " AND vs.teacher_id IS NULL"
+            if status_filter and status_filter != 'all':
+                sql += " AND a.status = %s"
+                params.append(status_filter)
+
+            sql += " GROUP BY period, l.title, s.title, a.status ORDER BY period"
+            cursor.execute(sql, params)
+            rows = cursor.fetchall()
+
+        # --- Reformat ---
+        result = {}
+        for r in rows:
+            period = r['period']
+            lvl    = r['level_title']
+            subj   = r['subject_title']
+            status = r['status'] or 'requested'
+            cnt    = r['user_count']
+            if period not in result:
+                result[period] = {}
+            if lvl not in result[period]:
+                result[period][lvl] = {
+                    'count': 0,
+                    'subjects': {},
+                    'status_breakdown': {'approved': 0, 'rejected': 0, 'requested': 0}
+                }
+            if subj not in result[period][lvl]['subjects']:
+                result[period][lvl]['subjects'][subj] = {
+                    'count': 0,
+                    'status_breakdown': {'approved': 0, 'rejected': 0, 'requested': 0}
+                }
+            result[period][lvl]['count'] += cnt
+            result[period][lvl]['status_breakdown'][status] += cnt
+            result[period][lvl]['subjects'][subj]['count'] += cnt
+            result[period][lvl]['subjects'][subj]['status_breakdown'][status] += cnt
+
+        formatted = []
+        for period, levels in result.items():
+            formatted.append({
+                'period': period,
+                'levels': [
+                    {
+                        'level': lvl,
+                        'count': info['count'],
+                        'status_breakdown': info['status_breakdown'],
+                        'subjects': [
+                            {
+                                'subject': sub,
+                                'count': sub_info['count'],
+                                'status_breakdown': sub_info['status_breakdown']
+                            }
+                            for sub, sub_info in info['subjects'].items()
+                        ]
+                    }
+                    for lvl, info in levels.items()
+                ]
+            })
+        return jsonify({'data': formatted}), 200
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+    finally:
+        conn.close()
+        
+@app.route('/api/vision-score-stats-student-dashboard', methods=['GET', 'POST'])
+def vision_score_stats_student_dashboard():
+    if request.method == 'GET':
+        req = {
+            'grouping': request.args.get('grouping', 'daily')
+        }
+    else:
+        req = request.get_json() or {}
+
+    grouping = req.get('grouping', 'daily')
+    fmt_map = {
+        'daily':     "DATE(a.created_at)",
+        'weekly':    "DATE_FORMAT(a.created_at, '%x-%v')",
+        'monthly':   "DATE_FORMAT(a.created_at, '%Y-%M')",
+        'quarterly': "CONCAT(YEAR(a.created_at), '-Q', QUARTER(a.created_at))",
+        'yearly':    "YEAR(a.created_at)",
+        'lifetime':  "'lifetime'"
+    }
+    period_expr = fmt_map.get(grouping, fmt_map['daily'])
+
+    sql = f"""
+        SELECT
+          {period_expr} AS period,
+          COALESCE(SUM(a.score), 0) AS total_score
+        FROM lifeapp.vision_question_answers a
+        WHERE a.score IS NOT NULL
+        GROUP BY period
+        ORDER BY period
+    """
+
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute(sql)
+            rows = cursor.fetchall()
+        return jsonify({'data': [{'period': r['period'], 'total_score': r['total_score']} for r in rows]})
+    finally:
+        conn.close()
 
 @app.route('/api/add_student', methods=['POST'])
 def add_student():
@@ -5077,49 +5266,70 @@ def get_challenges_completed_per_mission():
         
 @app.route('/api/mission-status-graph', methods=['POST'])
 def get_mission_status_graph():
-    """
-    Get mission completion statistics grouped by period and status.
-    """
     try:
         filters = request.get_json() or {}
         grouping = filters.get('grouping', 'monthly')
         start_date = filters.get('start_date')
         end_date = filters.get('end_date')
+        level_filter = filters.get('level')  # e.g., 'level1', 'level2', etc.
 
-        # Define date format based on grouping
+        # Date format mapping
         date_formats = {
-            'daily': "DATE_FORMAT(created_at, '%%Y-%%m-%%d')",
-            'weekly': "CONCAT(YEAR(created_at), '-', WEEK(created_at))",
-            'monthly': "DATE_FORMAT(created_at, '%%Y-%%m')",
-            'quarterly': "CONCAT(YEAR(created_at), '-Q', QUARTER(created_at))",
-            'yearly': "CAST(YEAR(created_at) AS CHAR)",
+            'daily': "DATE_FORMAT(mc.created_at, '%%Y-%%m-%%d')",
+            'weekly': "CONCAT(YEAR(mc.created_at), '-', WEEK(mc.created_at))",
+            'monthly': "DATE_FORMAT(mc.created_at, '%%Y-%%m')",
+            'quarterly': "CONCAT(YEAR(mc.created_at), '-Q', QUARTER(mc.created_at))",
+            'yearly': "YEAR(mc.created_at)",
             'lifetime': "'Lifetime'"
         }
-
         if grouping not in date_formats:
-            return jsonify({"error": "Invalid grouping parameter"}), 400
-
+            return jsonify({"error": "Invalid grouping"}), 400
         date_format = date_formats[grouping]
 
-        # SQL Query for mission status breakdown
+        # Base query
         query = f"""
             SELECT 
                 {date_format} AS period,
                 COUNT(*) AS count,
                 CASE 
-                    WHEN approved_at IS NULL AND rejected_at IS NULL THEN 'Mission Requested'
-                    WHEN approved_at IS NULL AND rejected_at IS NOT NULL THEN 'Mission Rejected'
-                    WHEN approved_at IS NOT NULL THEN 'Mission Approved'
+                    WHEN mc.approved_at IS NULL AND mc.rejected_at IS NULL THEN 'Mission Requested'
+                    WHEN mc.approved_at IS NULL AND mc.rejected_at IS NOT NULL THEN 'Mission Rejected'
+                    WHEN mc.approved_at IS NOT NULL THEN 'Mission Approved'
                 END AS mission_status
-            FROM lifeapp.la_mission_completes
+            FROM lifeapp.la_mission_completes mc
+            JOIN lifeapp.la_missions m ON mc.la_mission_id = m.id
             WHERE 1=1
         """
+        params = []
 
-        # Apply date filtering if provided
+        # Dynamic level filter: fetch level_key → grade mapping from la_levels
+        if level_filter:
+            # Fetch all levels once (cache if needed)
+            level_map = {
+                'level1': [1, 2, 3, 4, 5],
+                'level2': [6],
+                'level3': [7],
+                'level4': [8]
+            }
+            grades = level_map.get(level_filter)
+            if grades:
+                placeholders = ','.join(['%s'] * len(grades))
+                query += f"""
+                    AND EXISTS (
+                        SELECT 1 FROM lifeapp.users u 
+                        WHERE u.id = mc.user_id 
+                        AND u.grade IN ({placeholders})
+                    )
+                """
+                params.extend(grades)
+
+        # Safe date filters
         if start_date:
-            query += f" AND created_at >= '{start_date}'"
+            query += " AND mc.created_at >= %s"
+            params.append(start_date)
         if end_date:
-            query += f" AND created_at <= '{end_date}'"
+            query += " AND mc.created_at <= %s"
+            params.append(end_date)
 
         query += """
             GROUP BY period, mission_status
@@ -5127,12 +5337,16 @@ def get_mission_status_graph():
             ORDER BY period
         """
 
-        result = execute_query(query)
-
+        conn = get_db_connection()
+        with conn.cursor() as cursor:
+            cursor.execute(query, params)
+            result = cursor.fetchall()
         return jsonify({"data": result, "grouping": grouping})
     except Exception as e:
-        logger.error(f"Error in get_mission_status: {str(e)}")
+        logger.error(f"Mission status graph error: {e}")
         return jsonify({"error": str(e)}), 500
+    finally:
+        conn.close()
 
 @app.route('/api/histogram_topic_level_subject_quizgames', methods=['POST'])
 def get_histogram_topic_level_subject_quizgames():
@@ -6025,6 +6239,17 @@ def fetch_vision_sessions():
     conn = get_db_connection()
     try:
         with conn.cursor() as cursor:
+            # First, get total count WITHOUT pagination
+            count_sql = f"""
+                SELECT COUNT(*) AS total FROM ({inner_union}) AS combined_results
+                {outer_where_clause}
+            """
+            count_params = all_params + outer_params
+            cursor.execute(count_sql, count_params)
+            total_row = cursor.fetchone()
+            total = total_row['total'] if total_row else 0
+
+            # Then fetch paginated data
             cursor.execute(final_sql, final_params)
             rows = cursor.fetchall()
 
@@ -6034,23 +6259,24 @@ def fetch_vision_sessions():
                 r['media_url'] = f"{base_url}/{r['media_path']}"
             else:
                 r['media_url'] = None
-
             if r.get('answer_type') == 'mcq':
                 r['answer_text'] = None
                 r['media_url'] = None
 
+        total_pages = (total + per_page - 1) // per_page  # ceiling division
+
         return jsonify({
             'page': page,
             'per_page': per_page,
+            'total': total,
+            'total_pages': total_pages,
             'data': rows
         }), 200
-
     except Exception as e:
         print(f"Error in fetch_vision_sessions: {e}")
         import traceback
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500
-
     finally:
         conn.close()
         
@@ -9822,6 +10048,7 @@ def get_cities_for_state():
 ######################## SCHOOLS/DASHBOARD APIs ###################################
 ###################################################################################
 ###################################################################################
+
 @app.route('/api/count_school_state_dashboard', methods= ['POST'])
 def get_count_school_rate_dashboard():
     connection = get_db_connection()
@@ -9918,12 +10145,98 @@ def get_schools_demograph():
         if 'connection' in locals() and connection:
             connection.close()
 
+@app.route('/api/school_count_school_dashboard', methods=['GET'])
+def get_school_count_school_dashboard():
+    """
+    Returns the total count of schools where:
+      - is_life_lab = 1
+      - deleted_at IS NULL
+    """
+    connection = None
+    try:
+        connection = get_db_connection()
+        with connection.cursor() as cursor:
+            sql = """
+                SELECT COUNT(*) AS count
+                FROM lifeapp.schools
+                WHERE is_life_lab = 1
+                  AND deleted_at IS NULL
+            """
+            cursor.execute(sql)
+            result = cursor.fetchone()
+        # Return a flat object like { "count": N }
+        return jsonify(result or {"count": 0}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if connection:
+            connection.close()
+
+@app.route('/api/total_users_school_dashboard', methods=['GET'])
+def get_total_users_school_dashboard():
+    try:
+        connection = get_db_connection()
+        with connection.cursor() as cursor:
+            sql = """
+                SELECT COUNT(*) as count
+                FROM lifeapp.users
+                WHERE school_id != -1  -- exclude placeholder or admin users if needed
+            """
+            cursor.execute(sql)
+            result = cursor.fetchone()
+        return jsonify(result or {'count': 0}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        connection.close()
+
+@app.route('/api/active_school_dashboard', methods=['GET'])
+def get_active_school_dashboard():
+    try:
+        connection = get_db_connection()
+        with connection.cursor() as cursor:
+            sql = """
+                SELECT COUNT(*) as count
+                FROM lifeapp.schools
+                WHERE is_life_lab = 1
+                  AND status = '1'
+                  AND deleted_at IS NULL
+            """
+            cursor.execute(sql)
+            result = cursor.fetchone()
+        return jsonify(result or {'count': 0}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        connection.close()    
+
+@app.route('/api/inactive_school_dashboard', methods=['GET'])
+def get_inactive_school_dashboard():
+    try:
+        connection = get_db_connection()
+        with connection.cursor() as cursor:
+            sql = """
+                SELECT COUNT(*) as count
+                FROM lifeapp.schools
+                WHERE is_life_lab = 1
+                  AND (status != '1' OR status IS NULL)
+                  AND deleted_at IS NULL
+            """
+            cursor.execute(sql)
+            result = cursor.fetchone()
+        return jsonify(result or {'count': 0}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        connection.close()
+
 
 ###################################################################################
 ###################################################################################
 ######################## MENTORS/DASHBOARD APIs ###################################
 ###################################################################################
 ###################################################################################
+
 @app.route('/api/mentors', methods=['POST'])
 def get_mentors():
     """Fetch list of mentors with optional filters for state, mobile number, and mentor_code."""
@@ -15703,7 +16016,7 @@ def list_campaigns():
 
 @app.route('/api/campaigns', methods=['POST'])
 def create_campaign():
-    logger.info("📥 [POST] Create campaign")
+    logger.info(" [POST] Create campaign")
 
     conn = get_db_connection()
     try:

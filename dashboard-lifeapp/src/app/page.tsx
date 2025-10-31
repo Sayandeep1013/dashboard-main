@@ -4755,6 +4755,7 @@ export default function UserAnalyticsDashboard() {
   }
   const [statsVision, setStatsVision] = useState<PeriodDataVision[]>([]);
   const [groupingVision, setGroupingVision] = useState("daily");
+  const [visionStatus, setVisionStatus] = useState<string>("all");
   const [subjectList, setSubjectList] = useState<any[]>([]);
   const [subjectId, setSubjectId] = useState<number | null>(null);
   const [assignedBy, setAssignedBy] = useState<"all" | "teacher" | "self">(
@@ -4779,6 +4780,7 @@ export default function UserAnalyticsDashboard() {
       grouping: groupingVision,
       assigned_by: assignedBy !== "all" ? assignedBy : undefined,
       subject_id: subjectId ? subjectId.toString() : undefined,
+      status: visionStatus !== "all" ? visionStatus : undefined,
     };
     fetch(`${api_startpoint}/api/vision-completion-stats`, {
       method: "POST",
@@ -4795,7 +4797,7 @@ export default function UserAnalyticsDashboard() {
         setVisionLoading(false);
         setStatsVision([]);
       });
-  }, [groupingVision, subjectId, assignedBy, appliedFilters]);
+  }, [groupingVision, subjectId, assignedBy, visionStatus, appliedFilters]);
 
   const periodsVision = (statsVision || []).map((d) => d.period);
   const levelsVision = Array.from(
@@ -4836,11 +4838,15 @@ export default function UserAnalyticsDashboard() {
       const idx = params[0].dataIndex;
       const pd = (statsVision || [])[idx];
       if (!pd) return "";
-      let txt = `${pd.period}<br/>`;
-      pd.levels.forEach((lvl) => {
-        txt += `<b>${lvl.level} :</b> ${lvl.count}<br/>`;
-        lvl.subjects.forEach((sub) => {
-          txt += `&nbsp;&nbsp;* ${sub.subject} : ${sub.count}<br/>`;
+      let txt = `<strong>${pd.period}</strong><br/>`;
+      pd.levels.forEach((lvl: any) => {
+        const sb = lvl.status_breakdown || {};
+        txt += `<b>${lvl.level}:</b> ${lvl.count} ` +
+              `(Approved: ${sb.approved || 0} | Rejected: ${sb.rejected || 0} | Requested: ${sb.requested || 0})<br/>`;
+        lvl.subjects.forEach((sub: any) => {
+          const ssb = sub.status_breakdown || {};
+          txt += `&nbsp;&nbsp;• ${sub.subject}: ${sub.count} ` +
+                `(Approved: ${ssb.approved || 0} | Rejected: ${ssb.rejected || 0} | Requested: ${ssb.requested || 0})<br/>`;
         });
       });
       return txt;
@@ -6225,7 +6231,7 @@ const handleApplyFilters = async () => {
                     )}
                   </div>
                 </div>
-                {/* Histogram Suject assigned by Vision Cmpleted Wise */}
+                {/* Histogram Subject assigned by Vision Completed Wise */}
                 <div className="col-12 col-xl-6">
                   <div className="card shadow-sm border-0 h-100">
                     <div className="card-header bg-transparent py-3">
@@ -6259,10 +6265,15 @@ const handleApplyFilters = async () => {
                         Download
                       </button>
                     </div>
-                    <div style={{ marginBottom: "20px" }}>
+                    <div style={{ marginBottom: "20px", padding: "0 1.25rem" }}>
+                      <label htmlFor="vision-grouping-select" style={{ marginRight: "10px" }}>
+                        Grouping:
+                      </label>
                       <select
+                        id="vision-grouping-select"
                         value={groupingVision}
                         onChange={(e) => setGroupingVision(e.target.value)}
+                        className="mr-4"
                       >
                         <option value="daily">Daily</option>
                         <option value="weekly">Weekly</option>
@@ -6271,13 +6282,19 @@ const handleApplyFilters = async () => {
                         <option value="yearly">Yearly</option>
                         <option value="lifetime">Lifetime</option>
                       </select>
+
+                      <label htmlFor="vision-subject-select" style={{ marginRight: "10px" }}>
+                        Subject:
+                      </label>
                       <select
+                        id="vision-subject-select"
                         value={subjectId ?? ""}
                         onChange={(e) =>
                           setSubjectId(
                             e.target.value ? Number(e.target.value) : null
                           )
                         }
+                        className="mr-4"
                       >
                         <option value="">All Subjects</option>
                         {subjectList.map((s) => (
@@ -6286,31 +6303,52 @@ const handleApplyFilters = async () => {
                           </option>
                         ))}
                       </select>
+
+                      <label htmlFor="vision-assigned-by-select" style={{ marginRight: "10px" }}>
+                        Assigned By:
+                      </label>
                       <select
+                        id="vision-assigned-by-select"
                         value={assignedBy}
                         onChange={(e) => setAssignedBy(e.target.value as any)}
+                        className="mr-4"
                       >
                         <option value="all">All Assignments</option>
                         <option value="self">Self Assigned</option>
                         <option value="teacher">By Teacher</option>
                       </select>
-                      {visionLoading ? (
-                        <div className="text-center">
-                          <div
-                            className="spinner-border text-purple"
-                            role="status"
-                            style={{ width: "8rem", height: "8rem" }}
-                          ></div>
-                        </div>
-                      ) : (
-                        <LazyChart
-                          ref={chartRef19}
-                          option={optionVision}
-                          style={{ height: "400px", width: "100%" }}
-                          loading={visionLoading || loadingPhase3}
-                        />
-                      )}
+
+                      <label htmlFor="vision-status-select">
+                        Status:
+                      </label>
+                      <select
+                        id="vision-status-select"
+                        value={visionStatus}
+                        onChange={(e) => setVisionStatus(e.target.value)}
+                      >
+                        <option value="all">All Statuses</option>
+                        <option value="requested">Requested</option>
+                        <option value="approved">Approved</option>
+                        <option value="rejected">Rejected</option>
+                      </select>
                     </div>
+
+                    {visionLoading ? (
+                      <div className="text-center" style={{ padding: "1.25rem" }}>
+                        <div
+                          className="spinner-border text-purple"
+                          role="status"
+                          style={{ width: "8rem", height: "8rem" }}
+                        ></div>
+                      </div>
+                    ) : (
+                      <LazyChart
+                        ref={chartRef19}
+                        option={optionVision}
+                        style={{ height: "400px", width: "100%" }}
+                        loading={visionLoading || loadingPhase3}
+                      />
+                    )}
                   </div>
                 </div>
                 {/* Mission Coins Earned Over Time */}
