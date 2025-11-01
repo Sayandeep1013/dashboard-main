@@ -2288,35 +2288,53 @@ export default function StudentDashboard() {
     tooltip: { trigger: "axis", axisPointer: { type: "shadow" } },
     xAxis: {
       type: "category",
-      data: couponRedeemsData.map((d) =>
-        formatPeriod(d.period, couponRedeemsGrouping)
-      ),
+      data: couponRedeemsData.map((d) => d.period),
       axisLabel: {
-        rotate: couponRedeemsGrouping === "daily" ? 45 : 0,
-        // 👇 Custom formatter for WEEKLY labels
+        // Rotate the main label (e.g., "2024-1") diagonally
+        rotate: 30,
+        // Formatter to show both machine and human-readable labels
         formatter: (value: string) => {
           if (couponRedeemsGrouping !== "weekly") {
-            return value; // fallback for daily/monthly/etc.
+            return value; // fallback for non-weekly
           }
 
-          // Parse "2024-32" → year=2024, week=32
+          // Parse "2024-1" → year=2024, week=1
           const [yearStr, weekStr] = value.split('-');
           const year = parseInt(yearStr, 10);
           const week = parseInt(weekStr, 10);
 
+          if (!year || !week) return value;
+
           // Get Jan 1 of the year
           const jan1 = new Date(year, 0, 1);
-          // Adjust to Monday of week 1 (ISO week: Monday start)
+          // Adjust to Monday of ISO week 1
           const daysOffset = (week - 1) * 7 - (jan1.getDay() + 6) % 7;
           const weekStart = new Date(jan1.getTime() + daysOffset * 86400000);
           const weekEnd = new Date(weekStart.getTime() + 6 * 86400000);
 
-          // Format as "Jul 29 – Aug 4"
+          // Format as "Jan 1 – Jan 7"
           const format = (d: Date) =>
             d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
 
-          return `${format(weekStart)} – ${format(weekEnd)}`;
+          const humanRange = `${format(weekStart)} – ${format(weekEnd)}`;
+          // Return two lines: top = "2024-1", bottom = "Jan 1 – Jan 7"
+          return ["{a|" + value + "}", "{b|" + humanRange + "}"].join("\n");
         },
+        // Rich text styling for two-line labels
+        rich: {
+          a: {
+            fontWeight: 'bold',
+            fontSize: 11,
+            lineHeight: 16,
+          },
+          b: {
+            fontSize: 10,
+            color: '#666',
+            lineHeight: 14,
+          },
+        },
+        // Increase bottom margin to accommodate two lines
+        margin: 20,
       },
     },
     yAxis: { type: "value", name: "Coins" },
