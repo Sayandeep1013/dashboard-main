@@ -20,7 +20,7 @@ import os
 from dotenv import load_dotenv
 import uuid
 import boto3
-
+import re
 
 CURRENT_DB_MODE = "prod"          # 'prod' | 'staging'
 
@@ -252,11 +252,11 @@ def build_filter_conditions(request_args=None):
     gender = request_args.get('gender')
     if gender and gender != 'All':
         if gender == 'Male':
-            conditions.append("gender = 1")
+            conditions.append("gender = 0")
         elif gender == 'Female':
-            conditions.append("gender = 2")
+            conditions.append("gender = 1")
         elif gender == 'Other':
-            conditions.append("gender NOT IN (1, 2)")
+            conditions.append("gender NOT IN (0, 1)")
 
     # Date range
     date_range = request_args.get('date_range')
@@ -472,8 +472,8 @@ def signing_user_gender():
         SELECT 
             {period_expr} AS period,
             CASE
-                WHEN gender = '1' THEN 'Male'
-                WHEN gender = '2' THEN 'Female'
+                WHEN gender = '0' THEN 'Male'
+                WHEN gender = '1' THEN 'Female'
                 ELSE 'Unspecified'
             END AS gender_label,
             COUNT(*) AS count
@@ -519,11 +519,11 @@ def signing_user_gender():
     # Gender filter (from global filters)
     if req.get('gender') and req['gender'] != 'All':
         if req['gender'] == 'Male':
-            base_query += " AND gender = '1'"
+            base_query += " AND gender = '0'"
         elif req['gender'] == 'Female':
-            base_query += " AND gender = '2'"
+            base_query += " AND gender = '1'"
         else:
-            base_query += " AND (gender NOT IN ('1','2') OR gender IS NULL)"
+            base_query += " AND (gender NOT IN ('0','1') OR gender IS NULL)"
 
     # Date range
     if req.get('date_range') and req['date_range'] != 'All':
@@ -563,217 +563,265 @@ def signing_user_gender():
 
 @app.route('/api/histogram_level_subject_challenges_complete', methods=['POST'])
 def get_histogram_data_level_subject_challenges_complete():
+    req = request.get_json() or {}
+    grouping = req.get('grouping', 'monthly')
+    status_filter = req.get('status', 'all')
+    subject_filter = req.get('subject')
+
+    allowed_groupings = ['daily', 'weekly', 'monthly', 'quarterly', 'yearly', 'lifetime']
+    if grouping not in allowed_groupings:
+        grouping = 'monthly'
+
+    status_conditions = {
+        'submitted': "lamc.approved_at IS NULL AND lamc.rejected_at IS NULL",
+        'rejected': "lamc.approved_at IS NULL AND lamc.rejected_at IS NOT NULL",
+        'approved': "lamc.approved_at IS NOT NULL",
+        'all': "1=1"
+    }
+    status_condition = status_conditions.get(status_filter, "1=1")
+
+    period_expressions = {
+        'daily': "DATE(lamc.created_at)",
+        'weekly': "CONCAT(YEAR(lamc.created_at), '-', LPAD(WEEK(lamc.created_at, 1), 2, '0'))",
+        'monthly': "DATE_FORMAT(lamc.created_at, '%%Y-%%M')",
+        'quarterly': "CONCAT(YEAR(lamc.created_at), '-Q', QUARTER(lamc.created_at))",
+        'yearly': "CAST(YEAR(lamc.created_at) AS CHAR)",
+        'lifetime': "'lifetime'"
+    }
+    period_expr = period_expressions[grouping]
+
+    # Build filters WITHOUT date range
+    filters_no_date = {k: v for k, v in req.items() if k not in ['date_range', 'start_date', 'end_date']}
+    where_clause, params = build_filter_conditions(filters_no_date)
+    #  Fix ambiguous 'type != 3' from school_code logic
+    if "type != 3" in where_clause:
+        where_clause = where_clause.replace("type != 3", "u.type != 3")
+    for field in ['state', 'city', 'school_code', 'type', 'grade', 'gender']:
+        where_clause = where_clause.replace(f"{field} =", f"u.{field} =")
+
+    # Manual date filter on lamc.created_at
+    date_sql = ""
+    if req.get('date_range') and req['date_range'] != 'All':
+        dr = req['date_range']
+        if dr == 'last7days':
+            date_sql = " AND lamc.created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)"
+        elif dr == 'last30days':
+            date_sql = " AND lamc.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)"
+        elif dr == 'last3months':
+            date_sql = " AND lamc.created_at >= DATE_SUB(NOW(), INTERVAL 3 MONTH)"
+        elif dr == 'last6months':
+            date_sql = " AND lamc.created_at >= DATE_SUB(NOW(), INTERVAL 6 MONTH)"
+        elif dr == 'lastyear':
+            date_sql = " AND lamc.created_at >= DATE_SUB(NOW(), INTERVAL 1 YEAR)"
+    elif req.get('start_date') and req.get('end_date'):
+        date_sql = " AND lamc.created_at >= %s AND lamc.created_at <= %s"
+        params.extend([req['start_date'], req['end_date']])
+
+    sql = f"""
+        SELECT 
+            {period_expr} AS period,
+            COUNT(*) AS count, 
+            las.title AS subject_title, 
+            lal.title AS level_title
+        FROM lifeapp.la_mission_completes lamc 
+        INNER JOIN lifeapp.la_missions lam ON lam.id = lamc.la_mission_id AND lam.type = 1
+        INNER JOIN lifeapp.la_subjects las ON lam.la_subject_id = las.id
+        INNER JOIN lifeapp.la_levels lal ON lam.la_level_id = lal.id
+        INNER JOIN lifeapp.users u ON lamc.user_id = u.id  
+        WHERE {status_condition}
+        {f"AND JSON_CONTAINS(las.title, %s, '$')" if subject_filter else ""}
+        {f" AND {where_clause}" if where_clause != "1=1" else ""}
+        {date_sql}
+        GROUP BY period, lam.la_subject_id, lam.la_level_id
+        ORDER BY period, lam.la_subject_id, lam.la_level_id;
+    """
+
+    if subject_filter:
+        subject_json = json.dumps({"en": subject_filter})
+        execute_params = [subject_json] + params
+    else:
+        execute_params = params
+
+    conn = get_db_connection()
     try:
-        data = request.get_json() or {}
-        grouping = data.get('grouping', 'monthly').lower()
-        status_filter = data.get('status', 'all').lower()
-        subject_filter = data.get('subject')
-
-        # --- Same validation logic as before ---
-        allowed_groupings = ['daily', 'weekly', 'monthly', 'quarterly', 'yearly', 'lifetime']
-        grouping = grouping if grouping in allowed_groupings else 'monthly'
-
-        status_conditions = {
-            'submitted': "lamc.approved_at IS NULL AND lamc.rejected_at IS NULL",
-            'rejected': "lamc.approved_at IS NULL AND lamc.rejected_at IS NOT NULL",
-            'approved': "lamc.approved_at IS NOT NULL",
-            'all': "1=1"
-        }
-        status_condition = status_conditions.get(status_filter, "1=1")
-
-        period_expressions = {
-            'daily': "DATE(lamc.created_at)",
-            'weekly': "CONCAT(YEAR(lamc.created_at), '-W', WEEK(lamc.created_at, 1))",
-            'monthly': "DATE_FORMAT(lamc.created_at, '%%Y-%%M')",
-            'quarterly': "CONCAT(YEAR(lamc.created_at), '-Q', QUARTER(lamc.created_at))",
-            'yearly': "CAST(YEAR(lamc.created_at) AS CHAR)",
-            'lifetime': "'lifetime'"
-        }
-        period_expr = period_expressions[grouping]
-
-        connection = get_db_connection()
-        with connection.cursor() as cursor:
-            sql = f"""
-                SELECT 
-                    {period_expr} AS period,
-                    COUNT(*) AS count, 
-                    las.title AS subject_title, 
-                    lal.title AS level_title
-                FROM lifeapp.la_mission_completes lamc 
-                INNER JOIN lifeapp.la_missions lam ON lam.id = lamc.la_mission_id
-                INNER JOIN lifeapp.la_subjects las ON lam.la_subject_id = las.id
-                INNER JOIN lifeapp.la_levels lal ON lam.la_level_id = lal.id
-                INNER JOIN lifeapp.users u ON u.id = lamc.user_id  
-                WHERE lam.type = 1
-                AND {status_condition}
-                {"AND JSON_CONTAINS(las.title, %s, '$')" if subject_filter else ""}
-            """
-
-            #  Build global filter conditions (state, city, grade, etc.)
-            where_clause, filter_params = build_filter_conditions(data)
-            if where_clause and where_clause != "1=1":
-                #  Prefix all user fields with 'u.' because we alias users as 'u'
-                for field in ['state', 'city', 'school_code', 'gender', 'grade']:
-                    where_clause = where_clause.replace(f"{field} =", f"u.{field} =")
-                sql += f" AND {where_clause}"
-
-            sql += """
-                GROUP BY period, lam.la_subject_id, lam.la_level_id
-                ORDER BY period, lam.la_subject_id, lam.la_level_id;
-            """
-
-            params = filter_params
-            if subject_filter:
-                subject_json = json.dumps({"en": subject_filter})
-                params = [subject_json] + filter_params
-
-            cursor.execute(sql, tuple(params))
+        with conn.cursor() as cursor:
+            cursor.execute(sql, execute_params)
             results = cursor.fetchall()
-
         return jsonify(results), 200
-
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
     finally:
-        if connection:
-            connection.close()
+        conn.close()
 
 @app.route('/api/histogram_topic_level_subject_quizgames_2', methods=['POST'])
 def get_histogram_topic_level_subject_quizgames_2():
-    connection = None
+    req = request.get_json() or {}
+    grouping = req.get('grouping', 'monthly')
+    subject_filter = req.get('subject')
+
+    allowed_groupings = ['daily', 'weekly', 'monthly', 'quarterly', 'yearly', 'lifetime']
+    if grouping not in allowed_groupings:
+        grouping = 'monthly'
+
+    period_expressions = {
+        'daily': "DATE(lqgr.created_at)",
+        'weekly': "CONCAT(YEAR(lqgr.created_at), '-', LPAD(WEEK(lqgr.created_at, 1), 2, '0'))",
+        'monthly': "DATE_FORMAT(lqgr.created_at, '%%Y-%%M')",
+        'quarterly': "CONCAT(YEAR(lqgr.created_at), '-Q', QUARTER(lqgr.created_at))",
+        'yearly': "CAST(YEAR(lqgr.created_at) AS CHAR)",
+        'lifetime': "'lifetime'"
+    }
+    period_expr = period_expressions[grouping]
+
+    filters_no_date = {k: v for k, v in req.items() if k not in ['date_range', 'start_date', 'end_date']}
+    where_clause, params = build_filter_conditions(filters_no_date)
+
+    if "type != 3" in where_clause:
+        where_clause = where_clause.replace("type != 3", "u.type != 3")
+
+    for field in ['state', 'city', 'school_code', 'type', 'grade', 'gender']:
+        where_clause = where_clause.replace(f"{field} =", f"u.{field} =")
+
+    date_sql = ""
+    if req.get('date_range') and req['date_range'] != 'All':
+        dr = req['date_range']
+        if dr == 'last7days':
+            date_sql = " AND lqgr.created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)"
+        elif dr == 'last30days':
+            date_sql = " AND lqgr.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)"
+        elif dr == 'last3months':
+            date_sql = " AND lqgr.created_at >= DATE_SUB(NOW(), INTERVAL 3 MONTH)"
+        elif dr == 'last6months':
+            date_sql = " AND lqgr.created_at >= DATE_SUB(NOW(), INTERVAL 6 MONTH)"
+        elif dr == 'lastyear':
+            date_sql = " AND lqgr.created_at >= DATE_SUB(NOW(), INTERVAL 1 YEAR)"
+    elif req.get('start_date') and req.get('end_date'):
+        date_sql = " AND lqgr.created_at >= %s AND lqgr.created_at <= %s"
+        params.extend([req['start_date'], req['end_date']])
+
+    sql = f"""
+        SELECT 
+            {period_expr} AS period,
+            COUNT(*) AS count,
+            las.title AS subject_title,
+            lal.title AS level_title
+        FROM lifeapp.la_quiz_game_results lqgr
+        INNER JOIN lifeapp.la_quiz_games lqg ON lqgr.la_quiz_game_id = lqg.id AND lqg.type = 2
+        INNER JOIN lifeapp.la_subjects las ON lqg.la_subject_id = las.id
+        INNER JOIN lifeapp.la_topics lat ON lat.id = lqg.la_topic_id
+        INNER JOIN lifeapp.la_levels lal ON lat.la_level_id = lal.id
+        INNER JOIN lifeapp.users u ON lqgr.user_id = u.id
+        WHERE 1=1
+        {f"AND JSON_CONTAINS(las.title, %s, '$')" if subject_filter else ""}
+        {f" AND {where_clause}" if where_clause != "1=1" else ""}
+        {date_sql}
+        GROUP BY period, lqg.la_subject_id, lat.la_level_id
+        ORDER BY period;
+    """
+
+    if subject_filter:
+        subject_json = json.dumps({"en": subject_filter})
+        execute_params = [subject_json] + params
+    else:
+        execute_params = params
+
+    conn = get_db_connection()
     try:
-        data = request.get_json() or {}
-        grouping = data.get('grouping', 'monthly').lower()
-        subject_filter = data.get('subject')
-        allowed_groupings = ['daily', 'weekly', 'monthly', 'quarterly', 'yearly', 'lifetime']
-        grouping = grouping if grouping in allowed_groupings else 'monthly'
-
-        # FIX: Use 'created_at' instead of 'completed_at'
-        period_exprs = {
-            'daily': "DATE(laqgr.created_at)",  # ← changed
-            'weekly': "CONCAT(YEAR(laqgr.created_at), '-W', WEEK(laqgr.created_at, 1))",  # ← changed
-            'monthly': "DATE_FORMAT(laqgr.created_at, '%%Y-%%M')",  # ← changed
-            'quarterly': "CONCAT(YEAR(laqgr.created_at), '-Q', QUARTER(laqgr.created_at))",  # ← changed
-            'yearly': "CAST(YEAR(laqgr.created_at) AS CHAR)",  # ← changed
-            'lifetime': "'lifetime'"
-        }
-        period_expr = period_exprs[grouping]
-
-        connection = get_db_connection()
-        with connection.cursor() as cursor:
-            sql = f"""
-                SELECT 
-                    {period_expr} AS period,
-                    COUNT(*) AS count,
-                    las.title AS subject_title,
-                    lal.title AS level_title
-                FROM lifeapp.la_quiz_game_results laqgr
-                INNER JOIN lifeapp.la_quiz_games laqg ON laqgr.la_quiz_game_id = laqg.id
-                INNER JOIN lifeapp.la_subjects las ON laqg.la_subject_id = las.id
-                INNER JOIN lifeapp.la_topics lat ON lat.id = laqg.la_topic_id
-                INNER JOIN lifeapp.la_levels lal ON lat.la_level_id = lal.id
-                INNER JOIN lifeapp.users u ON laqgr.user_id = u.id
-                WHERE las.status = 1 
-                  AND laqgr.created_at IS NOT NULL  -- ← changed from completed_at
-                  {"AND JSON_CONTAINS(las.title, %s, '$')" if subject_filter else ""}
-            """
-            params = []
-            if subject_filter:
-                subject_json = json.dumps({"en": subject_filter})
-                params.append(subject_json)
-
-            # Apply global filters
-            where_clause, filter_params = build_filter_conditions(data)
-            if where_clause != "1=1":
-                # Alias user fields with 'u.'
-                for field in ['state', 'city', 'school_code', 'gender', 'grade']:
-                    where_clause = where_clause.replace(f"{field} =", f"u.{field} =")
-                sql += f" AND {where_clause}"
-                params.extend(filter_params)
-
-            sql += " GROUP BY period, laqg.la_subject_id, lat.la_level_id ORDER BY period"
-            cursor.execute(sql, params)
+        with conn.cursor() as cursor:
+            cursor.execute(sql, execute_params)
             result = cursor.fetchall()
         return jsonify(result), 200
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
     finally:
-        if connection:
-            connection.close()
+        conn.close()
 
 @app.route('/api/vision-completion-stats', methods=['POST'])
 def vision_completion_stats():
-    filters = request.get_json() or {}
-    grouping = filters.get('grouping', 'daily')
-    subject_id = filters.get('subject_id')
-    assigned_by = filters.get('assigned_by')
-    status_filter = filters.get('status')  # 'requested', 'approved', 'rejected', or 'all'
+    req = request.get_json() or {}
+    grouping = req.get('grouping', 'daily')
+    subject_id = req.get('subject_id')
+    assigned_by = req.get('assigned_by')
+    status_filter = req.get('status')
 
-    fmt_map = { 
+    fmt_map = {
         'daily':     "DATE(a.created_at)",
         'weekly':    "DATE_FORMAT(a.created_at, '%%x-%%v')",
         'monthly':   "DATE_FORMAT(a.created_at, '%%Y-%%M')",
         'quarterly': "CONCAT(YEAR(a.created_at), '-Q', QUARTER(a.created_at))",
         'yearly':    "YEAR(a.created_at)",
-        'lifetime':  "'lifetime'" 
+        'lifetime':  "'lifetime'"
     }
     period_expr = fmt_map.get(grouping, fmt_map['daily'])
+
+    filters_no_date = {k: v for k, v in req.items() if k not in ['date_range', 'start_date', 'end_date']}
+    where_clause, params = build_filter_conditions(filters_no_date)
+
+    if "type != 3" in where_clause:
+        where_clause = where_clause.replace("type != 3", "u.type != 3")
+
+    for field in ['state', 'city', 'school_code', 'type', 'grade', 'gender']:
+        where_clause = where_clause.replace(f"{field} =", f"u.{field} =")
+
+    date_sql = ""
+    if req.get('date_range') and req['date_range'] != 'All':
+        dr = req['date_range']
+        if dr == 'last7days':
+            date_sql = " AND a.created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)"
+        elif dr == 'last30days':
+            date_sql = " AND a.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)"
+        elif dr == 'last3months':
+            date_sql = " AND a.created_at >= DATE_SUB(NOW(), INTERVAL 3 MONTH)"
+        elif dr == 'last6months':
+            date_sql = " AND a.created_at >= DATE_SUB(NOW(), INTERVAL 6 MONTH)"
+        elif dr == 'lastyear':
+            date_sql = " AND a.created_at >= DATE_SUB(NOW(), INTERVAL 1 YEAR)"
+    elif req.get('start_date') and req.get('end_date'):
+        date_sql = " AND a.created_at >= %s AND a.created_at <= %s"
+        params.extend([req['start_date'], req['end_date']])
+
+    sql = f"""
+        SELECT
+          {period_expr} AS period,
+          JSON_UNQUOTE(JSON_EXTRACT(l.title, '$.en')) AS level_title,
+          JSON_UNQUOTE(JSON_EXTRACT(s.title, '$.en')) AS subject_title,
+          a.status,
+          COUNT(DISTINCT a.user_id) AS user_count
+        FROM lifeapp.vision_question_answers a
+        JOIN lifeapp.visions v ON v.id = a.vision_id
+        JOIN lifeapp.la_levels l ON l.id = v.la_level_id
+        JOIN lifeapp.la_subjects s ON s.id = v.la_subject_id
+        JOIN lifeapp.users u ON u.id = a.user_id
+        LEFT JOIN lifeapp.vision_assigns vs
+          ON vs.vision_id = a.vision_id AND vs.student_id = a.user_id
+        WHERE 1=1
+        {f" AND v.la_subject_id = %s" if subject_id else ""}
+        {f" AND vs.teacher_id IS NOT NULL" if assigned_by == 'teacher' else ""}
+        {f" AND vs.teacher_id IS NULL" if assigned_by == 'self' else ""}
+        {f" AND a.status = %s" if status_filter and status_filter != 'all' else ""}
+        {f" AND {where_clause}" if where_clause != "1=1" else ""}
+        {date_sql}
+        GROUP BY period, l.title, s.title, a.status
+        ORDER BY period;
+    """
+
+    execute_params = []
+    if subject_id:
+        execute_params.append(subject_id)
+    if status_filter and status_filter != 'all':
+        execute_params.append(status_filter)
+    execute_params.extend(params)
+
     conn = get_db_connection()
     try:
         with conn.cursor() as cursor:
-            sql = f"""
-            SELECT
-              {period_expr} AS period,
-              JSON_UNQUOTE(JSON_EXTRACT(l.title, '$.en')) AS level_title,
-              JSON_UNQUOTE(JSON_EXTRACT(s.title, '$.en')) AS subject_title,
-              a.status,
-              COUNT(DISTINCT a.user_id) AS user_count
-            FROM lifeapp.vision_question_answers a
-            JOIN lifeapp.visions v ON v.id = a.vision_id
-            JOIN lifeapp.la_levels l ON l.id = v.la_level_id
-            JOIN lifeapp.la_subjects s ON s.id = v.la_subject_id
-            JOIN lifeapp.users u ON u.id = a.user_id
-            LEFT JOIN lifeapp.vision_assigns vs
-              ON vs.vision_id = a.vision_id AND vs.student_id = a.user_id
-            WHERE 1=1
-            """
-            params = []
-
-            if subject_id:
-                sql += " AND v.la_subject_id = %s"
-                params.append(subject_id)
-            if assigned_by == 'teacher':
-                sql += " AND vs.teacher_id IS NOT NULL"
-            elif assigned_by == 'self':
-                sql += " AND vs.teacher_id IS NULL"
-
-            # Apply global filters
-            where_clause, filter_params = build_filter_conditions(filters)
-            if where_clause != "1=1":
-                user_fields = ['state', 'city', 'school_code', 'type', 'grade', 'gender']
-                for field in user_fields:
-                    where_clause = where_clause.replace(f"{field} =", f"u.{field} =")
-                sql += f" AND {where_clause}"
-                params.extend(filter_params)
-
-            # Apply status filter if specified and not 'all'
-            if status_filter and status_filter != 'all':
-                sql += " AND a.status = %s"
-                params.append(status_filter)
-
-            sql += " GROUP BY period, l.title, s.title, a.status ORDER BY period"
-            cursor.execute(sql, params)
+            cursor.execute(sql, execute_params)
             rows = cursor.fetchall()
 
-        # --- Reformat with status breakdown support ---
+        # Reformat with breakdown (same as your original logic)
         result = {}
         for r in rows:
             period = r['period']
-            lvl    = r['level_title']
-            subj   = r['subject_title']
-            status = r['status'] or 'requested'  # Treat NULL as 'requested'
-            cnt    = r['user_count']
-
+            lvl = r['level_title']
+            subj = r['subject_title']
+            status = r['status'] or 'requested'
+            cnt = r['user_count']
             if period not in result:
                 result[period] = {}
             if lvl not in result[period]:
@@ -787,8 +835,6 @@ def vision_completion_stats():
                     'count': 0,
                     'status_breakdown': {'approved': 0, 'rejected': 0, 'requested': 0}
                 }
-
-            # Accumulate
             result[period][lvl]['count'] += cnt
             result[period][lvl]['status_breakdown'][status] += cnt
             result[period][lvl]['subjects'][subj]['count'] += cnt
@@ -825,132 +871,180 @@ def vision_completion_stats():
 
 @app.route('/api/histogram_level_subject_jigyasa_complete', methods=['POST'])
 def get_histogram_data_level_subject_jigyasa_complete():
+    req = request.get_json() or {}
+    grouping = req.get('grouping', 'monthly')
+    status_filter = req.get('status', 'all')
+    subject_filter = req.get('subject')
+
+    allowed_groupings = ['daily', 'weekly', 'monthly', 'quarterly', 'yearly', 'lifetime']
+    if grouping not in allowed_groupings:
+        grouping = 'monthly'
+
+    status_conditions = {
+        'submitted': "lamc.approved_at IS NULL AND lamc.rejected_at IS NULL",
+        'rejected': "lamc.approved_at IS NULL AND lamc.rejected_at IS NOT NULL",
+        'approved': "lamc.approved_at IS NOT NULL",
+        'all': "1=1"
+    }
+    status_condition = status_conditions.get(status_filter, "1=1")
+
+    period_expressions = {
+        'daily': "DATE(lamc.created_at)",
+        'weekly': "CONCAT(YEAR(lamc.created_at), '-', LPAD(WEEK(lamc.created_at, 1), 2, '0'))",
+        'monthly': "DATE_FORMAT(lamc.created_at, '%%Y-%%M')",
+        'quarterly': "CONCAT(YEAR(lamc.created_at), '-Q', QUARTER(lamc.created_at))",
+        'yearly': "CAST(YEAR(lamc.created_at) AS CHAR)",
+        'lifetime': "'lifetime'"
+    }
+    period_expr = period_expressions[grouping]
+
+    filters_no_date = {k: v for k, v in req.items() if k not in ['date_range', 'start_date', 'end_date']}
+    where_clause, params = build_filter_conditions(filters_no_date)
+
+    if "type != 3" in where_clause:
+        where_clause = where_clause.replace("type != 3", "u.type != 3")
+
+    for field in ['state', 'city', 'school_code', 'type', 'grade', 'gender']:
+        where_clause = where_clause.replace(f"{field} =", f"u.{field} =")
+
+    date_sql = ""
+    if req.get('date_range') and req['date_range'] != 'All':
+        dr = req['date_range']
+        if dr == 'last7days':
+            date_sql = " AND lamc.created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)"
+        elif dr == 'last30days':
+            date_sql = " AND lamc.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)"
+        elif dr == 'last3months':
+            date_sql = " AND lamc.created_at >= DATE_SUB(NOW(), INTERVAL 3 MONTH)"
+        elif dr == 'last6months':
+            date_sql = " AND lamc.created_at >= DATE_SUB(NOW(), INTERVAL 6 MONTH)"
+        elif dr == 'lastyear':
+            date_sql = " AND lamc.created_at >= DATE_SUB(NOW(), INTERVAL 1 YEAR)"
+    elif req.get('start_date') and req.get('end_date'):
+        date_sql = " AND lamc.created_at >= %s AND lamc.created_at <= %s"
+        params.extend([req['start_date'], req['end_date']])
+
+    sql = f"""
+        SELECT 
+            {period_expr} AS period,
+            COUNT(*) AS count, 
+            las.title AS subject_title, 
+            lal.title AS level_title
+        FROM lifeapp.la_mission_completes lamc 
+        INNER JOIN lifeapp.la_missions lam ON lam.id = lamc.la_mission_id AND lam.type = 5
+        INNER JOIN lifeapp.la_subjects las ON lam.la_subject_id = las.id
+        INNER JOIN lifeapp.la_levels lal ON lam.la_level_id = lal.id
+        INNER JOIN lifeapp.users u ON lamc.user_id = u.id
+        WHERE {status_condition}
+        {f"AND JSON_CONTAINS(las.title, %s, '$')" if subject_filter else ""}
+        {f" AND {where_clause}" if where_clause != "1=1" else ""}
+        {date_sql}
+        GROUP BY period, lam.la_subject_id, lam.la_level_id
+        ORDER BY period;
+    """
+
+    if subject_filter:
+        subject_json = json.dumps({"en": subject_filter})
+        execute_params = [subject_json] + params
+    else:
+        execute_params = params
+
+    conn = get_db_connection()
     try:
-        data = request.get_json() or {}
-        grouping = data.get('grouping', 'monthly').lower()
-        status_filter = data.get('status', 'all').lower()
-        subject_filter = data.get('subject')
-
-        allowed_groupings = ['daily', 'weekly', 'monthly', 'quarterly', 'yearly', 'lifetime']
-        grouping = grouping if grouping in allowed_groupings else 'monthly'
-
-        status_conditions = {
-            'submitted': "lamc.approved_at IS NULL AND lamc.rejected_at IS NULL",
-            'rejected': "lamc.approved_at IS NULL AND lamc.rejected_at IS NOT NULL",
-            'approved': "lamc.approved_at IS NOT NULL",
-            'all': "1=1"
-        }
-        status_condition = status_conditions.get(status_filter, "1=1")
-
-        period_expressions = { 
-            'daily': "DATE(lamc.created_at)",
-            'weekly': "CONCAT(YEAR(lamc.created_at), '-W', WEEK(lamc.created_at, 1))",
-            'monthly': "DATE_FORMAT(lamc.created_at, '%%Y-%%M')",
-            'quarterly': "CONCAT(YEAR(lamc.created_at), '-Q', QUARTER(lamc.created_at))",
-            'yearly': "CAST(YEAR(lamc.created_at) AS CHAR)",
-            'lifetime': "'lifetime'" }
-        period_expr = period_expressions[grouping]
-
-        connection = get_db_connection()
-        with connection.cursor() as cursor:
-            sql = f"""
-                SELECT 
-                    {period_expr} AS period,
-                    COUNT(*) AS count, 
-                    las.title AS subject_title, 
-                    lal.title AS level_title
-                FROM lifeapp.la_mission_completes lamc 
-                INNER JOIN lifeapp.la_missions lam ON lam.id = lamc.la_mission_id
-                INNER JOIN lifeapp.la_subjects las ON lam.la_subject_id = las.id
-                INNER JOIN lifeapp.la_levels lal ON lam.la_level_id = lal.id
-                INNER JOIN lifeapp.users u ON lamc.user_id = u.id  --  Join users
-                WHERE lam.type = 5  -- Jigyasa type
-                AND {status_condition}
-                {"AND JSON_CONTAINS(las.title, %s, '$')" if subject_filter else ""}
-            """
-            params = []
-            if subject_filter:
-                params.append(json.dumps({"en": subject_filter}))
-
-            #  Apply global filters
-            where_clause, filter_params = build_filter_conditions(data)
-            if where_clause != "1=1":
-                sql += f" AND {where_clause}"
-                params.extend(filter_params)
-
-            sql += " GROUP BY period, lam.la_subject_id, lam.la_level_id ORDER BY period"
-            cursor.execute(sql, params)
+        with conn.cursor() as cursor:
+            cursor.execute(sql, execute_params)
             results = cursor.fetchall()
         return jsonify(results), 200
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
     finally:
-        if connection:
-            connection.close()
+        conn.close()
 
 @app.route('/api/histogram_level_subject_pragya_complete', methods=['POST'])
 def get_histogram_data_level_subject_pragya_complete():
+    req = request.get_json() or {}
+    grouping = req.get('grouping', 'monthly')
+    status_filter = req.get('status', 'all')
+    subject_filter = req.get('subject')
+
+    allowed_groupings = ['daily', 'weekly', 'monthly', 'quarterly', 'yearly', 'lifetime']
+    if grouping not in allowed_groupings:
+        grouping = 'monthly'
+
+    status_conditions = {
+        'submitted': "lamc.approved_at IS NULL AND lamc.rejected_at IS NULL",
+        'rejected': "lamc.approved_at IS NULL AND lamc.rejected_at IS NOT NULL",
+        'approved': "lamc.approved_at IS NOT NULL",
+        'all': "1=1"
+    }
+    status_condition = status_conditions.get(status_filter, "1=1")
+
+    period_expressions = {
+        'daily': "DATE(lamc.created_at)",
+        'weekly': "CONCAT(YEAR(lamc.created_at), '-', LPAD(WEEK(lamc.created_at, 1), 2, '0'))",
+        'monthly': "DATE_FORMAT(lamc.created_at, '%%Y-%%M')",
+        'quarterly': "CONCAT(YEAR(lamc.created_at), '-Q', QUARTER(lamc.created_at))",
+        'yearly': "CAST(YEAR(lamc.created_at) AS CHAR)",
+        'lifetime': "'lifetime'"
+    }
+    period_expr = period_expressions[grouping]
+
+    filters_no_date = {k: v for k, v in req.items() if k not in ['date_range', 'start_date', 'end_date']}
+    where_clause, params = build_filter_conditions(filters_no_date)
+    if "type != 3" in where_clause:
+        where_clause = where_clause.replace("type != 3", "u.type != 3")
+
+    for field in ['state', 'city', 'school_code', 'type', 'grade', 'gender']:
+        where_clause = where_clause.replace(f"{field} =", f"u.{field} =")
+
+    date_sql = ""
+    if req.get('date_range') and req['date_range'] != 'All':
+        dr = req['date_range']
+        if dr == 'last7days':
+            date_sql = " AND lamc.created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)"
+        elif dr == 'last30days':
+            date_sql = " AND lamc.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)"
+        elif dr == 'last3months':
+            date_sql = " AND lamc.created_at >= DATE_SUB(NOW(), INTERVAL 3 MONTH)"
+        elif dr == 'last6months':
+            date_sql = " AND lamc.created_at >= DATE_SUB(NOW(), INTERVAL 6 MONTH)"
+        elif dr == 'lastyear':
+            date_sql = " AND lamc.created_at >= DATE_SUB(NOW(), INTERVAL 1 YEAR)"
+    elif req.get('start_date') and req.get('end_date'):
+        date_sql = " AND lamc.created_at >= %s AND lamc.created_at <= %s"
+        params.extend([req['start_date'], req['end_date']])
+
+    sql = f"""
+        SELECT 
+            {period_expr} AS period,
+            COUNT(*) AS count, 
+            las.title AS subject_title, 
+            lal.title AS level_title
+        FROM lifeapp.la_mission_completes lamc 
+        INNER JOIN lifeapp.la_missions lam ON lam.id = lamc.la_mission_id AND lam.type = 6
+        INNER JOIN lifeapp.la_subjects las ON lam.la_subject_id = las.id
+        INNER JOIN lifeapp.la_levels lal ON lam.la_level_id = lal.id
+        INNER JOIN lifeapp.users u ON lamc.user_id = u.id
+        WHERE {status_condition}
+        {f"AND JSON_CONTAINS(las.title, %s, '$')" if subject_filter else ""}
+        {f" AND {where_clause}" if where_clause != "1=1" else ""}
+        {date_sql}
+        GROUP BY period, lam.la_subject_id, lam.la_level_id
+        ORDER BY period;
+    """
+
+    if subject_filter:
+        subject_json = json.dumps({"en": subject_filter})
+        execute_params = [subject_json] + params
+    else:
+        execute_params = params
+
+    conn = get_db_connection()
     try:
-        data = request.get_json() or {}
-        grouping = data.get('grouping', 'monthly').lower()
-        status_filter = data.get('status', 'all').lower()
-        subject_filter = data.get('subject')
-
-        allowed_groupings = ['daily', 'weekly', 'monthly', 'quarterly', 'yearly', 'lifetime']
-        grouping = grouping if grouping in allowed_groupings else 'monthly'
-
-        status_conditions = { 
-            'submitted': "lamc.approved_at IS NULL AND lamc.rejected_at IS NULL",
-            'rejected': "lamc.approved_at IS NULL AND lamc.rejected_at IS NOT NULL",
-            'approved': "lamc.approved_at IS NOT NULL",
-            'all': "1=1" }
-        status_condition = status_conditions.get(status_filter, "1=1")
-
-        period_expressions = { 
-            'daily': "DATE(lamc.created_at)",
-            'weekly': "CONCAT(YEAR(lamc.created_at), '-W', WEEK(lamc.created_at, 1))",
-            'monthly': "DATE_FORMAT(lamc.created_at, '%%Y-%%M')",
-            'quarterly': "CONCAT(YEAR(lamc.created_at), '-Q', QUARTER(lamc.created_at))",
-            'yearly': "CAST(YEAR(lamc.created_at) AS CHAR)",
-            'lifetime': "'lifetime'" }
-        period_expr = period_expressions[grouping]
-
-        connection = get_db_connection()
-        with connection.cursor() as cursor:
-            sql = f"""
-                SELECT 
-                    {period_expr} AS period,
-                    COUNT(*) AS count, 
-                    las.title AS subject_title, 
-                    lal.title AS level_title
-                FROM lifeapp.la_mission_completes lamc 
-                INNER JOIN lifeapp.la_missions lam ON lam.id = lamc.la_mission_id
-                INNER JOIN lifeapp.la_subjects las ON lam.la_subject_id = las.id
-                INNER JOIN lifeapp.la_levels lal ON lam.la_level_id = lal.id
-                INNER JOIN lifeapp.users u ON lamc.user_id = u.id  --  Join users
-                WHERE lam.type = 6  -- Pragya type
-                AND {status_condition}
-                {"AND JSON_CONTAINS(las.title, %s, '$')" if subject_filter else ""}
-            """
-            params = []
-            if subject_filter:
-                params.append(json.dumps({"en": subject_filter}))
-
-            #  Apply global filters
-            where_clause, filter_params = build_filter_conditions(data)
-            if where_clause != "1=1":
-                sql += f" AND {where_clause}"
-                params.extend(filter_params)
-
-            sql += " GROUP BY period, lam.la_subject_id, lam.la_level_id ORDER BY period"
-            cursor.execute(sql, params)
+        with conn.cursor() as cursor:
+            cursor.execute(sql, execute_params)
             results = cursor.fetchall()
         return jsonify(results), 200
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
     finally:
-        if connection:
-            connection.close()
+        conn.close()
 
 @app.route('/api/mission-points-over-time', methods=['POST'])
 def mission_points_over_time():
@@ -962,7 +1056,7 @@ def mission_points_over_time():
     elif grouping == 'weekly':
         expr = "CONCAT(YEAR(lamc.created_at), '-', LPAD(WEEK(lamc.created_at, 1), 2, '0'))"
     elif grouping == 'monthly':
-        expr = "DATE_FORMAT(lamc.created_at, '%%Y-%%M')"  # ← double %%
+        expr = "DATE_FORMAT(lamc.created_at, '%%Y-%%M')"
     elif grouping == 'quarterly':
         expr = "CONCAT(YEAR(lamc.created_at), '-Q', QUARTER(lamc.created_at))"
     elif grouping == 'yearly':
@@ -970,47 +1064,65 @@ def mission_points_over_time():
     else:
         expr = "'Lifetime'"
 
+    # Build filters WITHOUT date range
+    filters_no_date = {k: v for k, v in req.items() if k not in ['date_range', 'start_date', 'end_date']}
+    where_clause, params = build_filter_conditions(filters_no_date)
+    if "type != 3" in where_clause:
+        where_clause = where_clause.replace("type != 3", "u.type != 3")
+
+    for field in ['state', 'city', 'school_code', 'type', 'grade', 'gender']:
+        where_clause = where_clause.replace(f"{field} =", f"u.{field} =")
+
+    # Manually add date filter on lamc.created_at
+    date_sql = ""
+    if req.get('date_range') and req['date_range'] != 'All':
+        dr = req['date_range']
+        if dr == 'last7days':
+            date_sql = " AND lamc.created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)"
+        elif dr == 'last30days':
+            date_sql = " AND lamc.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)"
+        elif dr == 'last3months':
+            date_sql = " AND lamc.created_at >= DATE_SUB(NOW(), INTERVAL 3 MONTH)"
+        elif dr == 'last6months':
+            date_sql = " AND lamc.created_at >= DATE_SUB(NOW(), INTERVAL 6 MONTH)"
+        elif dr == 'lastyear':
+            date_sql = " AND lamc.created_at >= DATE_SUB(NOW(), INTERVAL 1 YEAR)"
+    elif req.get('start_date') and req.get('end_date'):
+        date_sql = " AND lamc.created_at >= %s AND lamc.created_at <= %s"
+        params.extend([req['start_date'], req['end_date']])
+
     sql = f"""
         SELECT {expr} AS period, SUM(lamc.points) AS points
         FROM lifeapp.la_mission_completes lamc
         INNER JOIN lifeapp.la_missions lam ON lamc.la_mission_id = lam.id AND lam.type = 1
         INNER JOIN lifeapp.users u ON lamc.user_id = u.id
         WHERE lamc.points IS NOT NULL AND lamc.points > 0
+          AND {where_clause}
+          {date_sql}
+        GROUP BY {expr if grouping != 'lifetime' else 'period'}
+        ORDER BY period ASC
     """
-
-    where_clause, filter_params = build_filter_conditions(req)
-    params = []
-    if where_clause and where_clause != "1=1":
-        for field in ['state', 'city', 'school_code', 'type', 'grade', 'gender']:
-            where_clause = where_clause.replace(f"{field} =", f"u.{field} =")
-        sql += f" AND {where_clause}"
-        params = filter_params
-
-    if grouping != 'lifetime':
-        sql += f" GROUP BY {expr} ORDER BY period ASC"
-    else:
-        sql += " GROUP BY period"
-
     conn = get_db_connection()
     try:
         with conn.cursor() as cursor:
-            cursor.execute(sql, params)  #  always pass params (even if empty list)
+            cursor.execute(sql, params)
             rows = cursor.fetchall()
+        return jsonify({'data': rows})
     finally:
         conn.close()
-    return jsonify({'data': rows})
 
 @app.route('/api/quiz-points-over-time', methods=['POST'])
 def quiz_points_over_time():
     req = request.get_json() or {}
     grouping = req.get('grouping', 'monthly')
 
+    # Period expression on lqgr.created_at
     if grouping == 'daily':
         expr = "DATE(lqgr.created_at)"
     elif grouping == 'weekly':
         expr = "CONCAT(YEAR(lqgr.created_at), '-', LPAD(WEEK(lqgr.created_at, 1), 2, '0'))"
     elif grouping == 'monthly':
-        expr = "DATE_FORMAT(lqgr.created_at, '%%Y-%%M')"  # ← qualified
+        expr = "DATE_FORMAT(lqgr.created_at, '%%Y-%%M')"
     elif grouping == 'quarterly':
         expr = "CONCAT(YEAR(lqgr.created_at), '-Q', QUARTER(lqgr.created_at))"
     elif grouping == 'yearly':
@@ -1018,34 +1130,50 @@ def quiz_points_over_time():
     else:
         expr = "'Lifetime'"
 
+    # Build filters WITHOUT date range
+    filters_no_date = {k: v for k, v in req.items() if k not in ['date_range', 'start_date', 'end_date']}
+    where_clause, params = build_filter_conditions(filters_no_date)
+    if "type != 3" in where_clause:
+        where_clause = where_clause.replace("type != 3", "u.type != 3")
+    for field in ['state', 'city', 'school_code', 'type', 'grade', 'gender']:
+        where_clause = where_clause.replace(f"{field} =", f"u.{field} =")
+
+    # Manual date filter on lqgr.created_at
+    date_sql = ""
+    if req.get('date_range') and req['date_range'] != 'All':
+        dr = req['date_range']
+        if dr == 'last7days':
+            date_sql = " AND lqgr.created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)"
+        elif dr == 'last30days':
+            date_sql = " AND lqgr.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)"
+        elif dr == 'last3months':
+            date_sql = " AND lqgr.created_at >= DATE_SUB(NOW(), INTERVAL 3 MONTH)"
+        elif dr == 'last6months':
+            date_sql = " AND lqgr.created_at >= DATE_SUB(NOW(), INTERVAL 6 MONTH)"
+        elif dr == 'lastyear':
+            date_sql = " AND lqgr.created_at >= DATE_SUB(NOW(), INTERVAL 1 YEAR)"
+    elif req.get('start_date') and req.get('end_date'):
+        date_sql = " AND lqgr.created_at >= %s AND lqgr.created_at <= %s"
+        params.extend([req['start_date'], req['end_date']])
+
     sql = f"""
         SELECT {expr} AS period, SUM(lqgr.coins) AS points
         FROM lifeapp.la_quiz_game_results lqgr
         INNER JOIN lifeapp.users u ON lqgr.user_id = u.id
         WHERE lqgr.coins IS NOT NULL AND lqgr.coins > 0
+          AND {where_clause}
+          {date_sql}
+        GROUP BY {expr if grouping != 'lifetime' else 'period'}
+        ORDER BY period ASC
     """
-
-    where_clause, filter_params = build_filter_conditions(req)
-    params = []
-    if where_clause and where_clause != "1=1":
-        for field in ['state', 'city', 'school_code', 'type', 'grade', 'gender']:
-            where_clause = where_clause.replace(f"{field} =", f"u.{field} =")
-        sql += f" AND {where_clause}"
-        params = filter_params
-
-    if grouping != 'lifetime':
-        sql += f" GROUP BY {expr} ORDER BY period ASC"
-    else:
-        sql += " GROUP BY period"
-
     conn = get_db_connection()
     try:
         with conn.cursor() as cursor:
             cursor.execute(sql, params)
             rows = cursor.fetchall()
+        return jsonify({'data': rows})
     finally:
         conn.close()
-    return jsonify({'data': rows})
 
 @app.route('/api/jigyasa-points-over-time', methods=['POST'])
 def jigyasa_points_over_time():
@@ -1057,7 +1185,7 @@ def jigyasa_points_over_time():
     elif grouping == 'weekly':
         expr = "CONCAT(YEAR(lamc.created_at), '-', LPAD(WEEK(lamc.created_at, 1), 2, '0'))"
     elif grouping == 'monthly':
-        expr = "DATE_FORMAT(lamc.created_at, '%%Y-%%M')"  # ← escaped %%
+        expr = "DATE_FORMAT(lamc.created_at, '%%Y-%%M')"
     elif grouping == 'quarterly':
         expr = "CONCAT(YEAR(lamc.created_at), '-Q', QUARTER(lamc.created_at))"
     elif grouping == 'yearly':
@@ -1065,35 +1193,49 @@ def jigyasa_points_over_time():
     else:
         expr = "'Lifetime'"
 
+    filters_no_date = {k: v for k, v in req.items() if k not in ['date_range', 'start_date', 'end_date']}
+    where_clause, params = build_filter_conditions(filters_no_date)
+    if "type != 3" in where_clause:
+        where_clause = where_clause.replace("type != 3", "u.type != 3")
+    for field in ['state', 'city', 'school_code', 'type', 'grade', 'gender']:
+        where_clause = where_clause.replace(f"{field} =", f"u.{field} =")
+
+    date_sql = ""
+    if req.get('date_range') and req['date_range'] != 'All':
+        dr = req['date_range']
+        if dr == 'last7days':
+            date_sql = " AND lamc.created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)"
+        elif dr == 'last30days':
+            date_sql = " AND lamc.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)"
+        elif dr == 'last3months':
+            date_sql = " AND lamc.created_at >= DATE_SUB(NOW(), INTERVAL 3 MONTH)"
+        elif dr == 'last6months':
+            date_sql = " AND lamc.created_at >= DATE_SUB(NOW(), INTERVAL 6 MONTH)"
+        elif dr == 'lastyear':
+            date_sql = " AND lamc.created_at >= DATE_SUB(NOW(), INTERVAL 1 YEAR)"
+    elif req.get('start_date') and req.get('end_date'):
+        date_sql = " AND lamc.created_at >= %s AND lamc.created_at <= %s"
+        params.extend([req['start_date'], req['end_date']])
+
     sql = f"""
         SELECT {expr} AS period, SUM(lamc.points) AS points
         FROM lifeapp.la_mission_completes lamc
         INNER JOIN lifeapp.la_missions lam ON lamc.la_mission_id = lam.id AND lam.type = 5
         INNER JOIN lifeapp.users u ON lamc.user_id = u.id
         WHERE lamc.points IS NOT NULL AND lamc.points > 0
+          AND {where_clause}
+          {date_sql}
+        GROUP BY {expr if grouping != 'lifetime' else 'period'}
+        ORDER BY period ASC
     """
-
-    where_clause, filter_params = build_filter_conditions(req)
-    params = []
-    if where_clause and where_clause != "1=1":
-        for field in ['state', 'city', 'school_code', 'type', 'grade', 'gender']:
-            where_clause = where_clause.replace(f"{field} =", f"u.{field} =")
-        sql += f" AND {where_clause}"
-        params = filter_params
-
-    if grouping != 'lifetime':
-        sql += f" GROUP BY {expr} ORDER BY period ASC"
-    else:
-        sql += " GROUP BY period"
-
     conn = get_db_connection()
     try:
         with conn.cursor() as cursor:
             cursor.execute(sql, params)
             rows = cursor.fetchall()
+        return jsonify({'data': rows})
     finally:
         conn.close()
-    return jsonify({'data': rows})
 
 @app.route('/api/pragya-points-over-time', methods=['POST'])
 def pragya_points_over_time():
@@ -1105,7 +1247,7 @@ def pragya_points_over_time():
     elif grouping == 'weekly':
         expr = "CONCAT(YEAR(lamc.created_at), '-', LPAD(WEEK(lamc.created_at, 1), 2, '0'))"
     elif grouping == 'monthly':
-        expr = "DATE_FORMAT(lamc.created_at, '%%Y-%%M')"  # ← escaped %%
+        expr = "DATE_FORMAT(lamc.created_at, '%%Y-%%M')"
     elif grouping == 'quarterly':
         expr = "CONCAT(YEAR(lamc.created_at), '-Q', QUARTER(lamc.created_at))"
     elif grouping == 'yearly':
@@ -1113,35 +1255,49 @@ def pragya_points_over_time():
     else:
         expr = "'Lifetime'"
 
+    filters_no_date = {k: v for k, v in req.items() if k not in ['date_range', 'start_date', 'end_date']}
+    where_clause, params = build_filter_conditions(filters_no_date)
+    if "type != 3" in where_clause:
+        where_clause = where_clause.replace("type != 3", "u.type != 3")
+    for field in ['state', 'city', 'school_code', 'type', 'grade', 'gender']:
+        where_clause = where_clause.replace(f"{field} =", f"u.{field} =")
+
+    date_sql = ""
+    if req.get('date_range') and req['date_range'] != 'All':
+        dr = req['date_range']
+        if dr == 'last7days':
+            date_sql = " AND lamc.created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)"
+        elif dr == 'last30days':
+            date_sql = " AND lamc.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)"
+        elif dr == 'last3months':
+            date_sql = " AND lamc.created_at >= DATE_SUB(NOW(), INTERVAL 3 MONTH)"
+        elif dr == 'last6months':
+            date_sql = " AND lamc.created_at >= DATE_SUB(NOW(), INTERVAL 6 MONTH)"
+        elif dr == 'lastyear':
+            date_sql = " AND lamc.created_at >= DATE_SUB(NOW(), INTERVAL 1 YEAR)"
+    elif req.get('start_date') and req.get('end_date'):
+        date_sql = " AND lamc.created_at >= %s AND lamc.created_at <= %s"
+        params.extend([req['start_date'], req['end_date']])
+
     sql = f"""
         SELECT {expr} AS period, SUM(lamc.points) AS points
         FROM lifeapp.la_mission_completes lamc
         INNER JOIN lifeapp.la_missions lam ON lamc.la_mission_id = lam.id AND lam.type = 6
         INNER JOIN lifeapp.users u ON lamc.user_id = u.id
         WHERE lamc.points IS NOT NULL AND lamc.points > 0
+          AND {where_clause}
+          {date_sql}
+        GROUP BY {expr if grouping != 'lifetime' else 'period'}
+        ORDER BY period ASC
     """
-
-    where_clause, filter_params = build_filter_conditions(req)
-    params = []
-    if where_clause and where_clause != "1=1":
-        for field in ['state', 'city', 'school_code', 'type', 'grade', 'gender']:
-            where_clause = where_clause.replace(f"{field} =", f"u.{field} =")
-        sql += f" AND {where_clause}"
-        params = filter_params
-
-    if grouping != 'lifetime':
-        sql += f" GROUP BY {expr} ORDER BY period ASC"
-    else:
-        sql += " GROUP BY period"
-
     conn = get_db_connection()
     try:
         with conn.cursor() as cursor:
             cursor.execute(sql, params)
             rows = cursor.fetchall()
+        return jsonify({'data': rows})
     finally:
         conn.close()
-    return jsonify({'data': rows})
 
 @app.route('/api/coupon-redeems-over-time', methods=['POST'])
 def coupon_redeems_over_time():
@@ -1153,7 +1309,7 @@ def coupon_redeems_over_time():
     elif grouping == 'weekly':
         expr = "CONCAT(YEAR(cr.created_at), '-', LPAD(WEEK(cr.created_at, 1), 2, '0'))"
     elif grouping == 'monthly':
-        expr = "DATE_FORMAT(cr.created_at, '%%Y-%%M')"  # ← qualified
+        expr = "DATE_FORMAT(cr.created_at, '%%Y-%%M')"
     elif grouping == 'quarterly':
         expr = "CONCAT(YEAR(cr.created_at), '-Q', QUARTER(cr.created_at))"
     elif grouping == 'yearly':
@@ -1161,77 +1317,113 @@ def coupon_redeems_over_time():
     else:
         expr = "'Lifetime'"
 
+    # Build filters WITHOUT date range
+    filters_no_date = {k: v for k, v in req.items() if k not in ['date_range', 'start_date', 'end_date']}
+    where_clause, params = build_filter_conditions(filters_no_date)
+    if "type != 3" in where_clause:
+        where_clause = where_clause.replace("type != 3", "u.type != 3")
+    for field in ['state', 'city', 'school_code', 'type', 'grade', 'gender']:
+        where_clause = where_clause.replace(f"{field} =", f"u.{field} =")
+
+    # Manual date filter on cr.created_at
+    date_sql = ""
+    if req.get('date_range') and req['date_range'] != 'All':
+        dr = req['date_range']
+        if dr == 'last7days':
+            date_sql = " AND cr.created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)"
+        elif dr == 'last30days':
+            date_sql = " AND cr.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)"
+        elif dr == 'last3months':
+            date_sql = " AND cr.created_at >= DATE_SUB(NOW(), INTERVAL 3 MONTH)"
+        elif dr == 'last6months':
+            date_sql = " AND cr.created_at >= DATE_SUB(NOW(), INTERVAL 6 MONTH)"
+        elif dr == 'lastyear':
+            date_sql = " AND cr.created_at >= DATE_SUB(NOW(), INTERVAL 1 YEAR)"
+    elif req.get('start_date') and req.get('end_date'):
+        date_sql = " AND cr.created_at >= %s AND cr.created_at <= %s"
+        params.extend([req['start_date'], req['end_date']])
+
     sql = f"""
         SELECT {expr} AS period, SUM(cr.coins) AS coins
         FROM lifeapp.coupon_redeems cr
         INNER JOIN lifeapp.users u ON cr.user_id = u.id
         WHERE cr.coins IS NOT NULL AND cr.coins > 0
+          AND {where_clause}
+          {date_sql}
+        GROUP BY {expr if grouping != 'lifetime' else 'period'}
+        ORDER BY period ASC
     """
-
-    where_clause, filter_params = build_filter_conditions(req)
-    params = []
-    if where_clause and where_clause != "1=1":
-        for field in ['state', 'city', 'school_code', 'type', 'grade', 'gender']:
-            where_clause = where_clause.replace(f"{field} =", f"u.{field} =")
-        sql += f" AND {where_clause}"
-        params = filter_params
-
-    if grouping != 'lifetime':
-        sql += f" GROUP BY period ORDER BY MIN(cr.created_at) ASC"
-    else:
-        sql += " GROUP BY period"
-
     conn = get_db_connection()
     try:
         with conn.cursor() as cursor:
             cursor.execute(sql, params)
             rows = cursor.fetchall()
+        return jsonify({'data': rows})
     finally:
         conn.close()
-    return jsonify({'data': rows})
 
 @app.route('/api/vision-score-stats', methods=['POST'])
 def vision_score_stats():
     req = request.get_json() or {}
     grouping = req.get('grouping', 'daily')
 
-    fmt_map = {
-        'daily':     "DATE(a.created_at)",
-        'weekly':    "DATE_FORMAT(a.created_at, '%%x-%%v')",
-        'monthly':   "DATE_FORMAT(a.created_at, '%%Y-%%M')",  # ← escaped %%
-        'quarterly': "CONCAT(YEAR(a.created_at), '-Q', QUARTER(a.created_at))",
-        'yearly':    "YEAR(a.created_at)",
-        'lifetime':  "'lifetime'"
-    }
-    period_expr = fmt_map.get(grouping, fmt_map['daily'])
+    if grouping == 'daily':
+        expr = "DATE(a.created_at)"
+    elif grouping == 'weekly':
+        expr = "DATE_FORMAT(a.created_at, '%%x-%%v')"
+    elif grouping == 'monthly':
+        expr = "DATE_FORMAT(a.created_at, '%%Y-%%M')"
+    elif grouping == 'quarterly':
+        expr = "CONCAT(YEAR(a.created_at), '-Q', QUARTER(a.created_at))"
+    elif grouping == 'yearly':
+        expr = "YEAR(a.created_at)"
+    else:
+        expr = "'lifetime'"
+
+    filters_no_date = {k: v for k, v in req.items() if k not in ['date_range', 'start_date', 'end_date']}
+    where_clause, params = build_filter_conditions(filters_no_date)
+    if "type != 3" in where_clause:
+        where_clause = where_clause.replace("type != 3", "u.type != 3")
+    for field in ['state', 'city', 'school_code', 'type', 'grade', 'gender']:
+        where_clause = where_clause.replace(f"{field} =", f"u.{field} =")
+
+    date_sql = ""
+    if req.get('date_range') and req['date_range'] != 'All':
+        dr = req['date_range']
+        if dr == 'last7days':
+            date_sql = " AND a.created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)"
+        elif dr == 'last30days':
+            date_sql = " AND a.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)"
+        elif dr == 'last3months':
+            date_sql = " AND a.created_at >= DATE_SUB(NOW(), INTERVAL 3 MONTH)"
+        elif dr == 'last6months':
+            date_sql = " AND a.created_at >= DATE_SUB(NOW(), INTERVAL 6 MONTH)"
+        elif dr == 'lastyear':
+            date_sql = " AND a.created_at >= DATE_SUB(NOW(), INTERVAL 1 YEAR)"
+    elif req.get('start_date') and req.get('end_date'):
+        date_sql = " AND a.created_at >= %s AND a.created_at <= %s"
+        params.extend([req['start_date'], req['end_date']])
 
     sql = f"""
         SELECT
-          {period_expr} AS period,
+          {expr} AS period,
           COALESCE(SUM(a.score), 0) AS total_score
         FROM lifeapp.vision_question_answers a
         JOIN lifeapp.users u ON u.id = a.user_id
         WHERE a.score IS NOT NULL
+          AND {where_clause}
+          {date_sql}
+        GROUP BY period
+        ORDER BY period
     """
-
-    where_clause, filter_params = build_filter_conditions(req)
-    params = []
-    if where_clause and where_clause != "1=1":
-        for field in ['state', 'city', 'school_code', 'type', 'grade', 'gender']:
-            where_clause = where_clause.replace(f"{field} =", f"u.{field} =")
-        sql += f" AND {where_clause}"
-        params = filter_params
-
-    sql += " GROUP BY period ORDER BY period"
-
     conn = get_db_connection()
     try:
         with conn.cursor() as cursor:
             cursor.execute(sql, params)
             rows = cursor.fetchall()
+        return jsonify({'data': [{'period': r['period'], 'total_score': r['total_score']} for r in rows]})
     finally:
         conn.close()
-    return jsonify({'data': [{'period': r['period'], 'total_score': r['total_score']} for r in rows]})
 
 @app.route('/api/PBLsubmissions', methods=['POST'])
 def get_PBLsubmissions():
@@ -1240,58 +1432,245 @@ def get_PBLsubmissions():
     status = payload.get('status', 'all')
 
     GROUPING_SQL = {
-        'daily':     "DATE(lamc.created_at)",
-        'weekly':    "DATE_FORMAT(lamc.created_at, '%%x-%%v')",
-        'monthly':   "DATE_FORMAT(lamc.created_at, '%%Y-%%M')",  # ← escaped %%
-        'quarterly': "CONCAT(YEAR(lamc.created_at), '-Q', QUARTER(lamc.created_at))",
-        'yearly':    "YEAR(lamc.created_at)",
-        'lifetime':  "'All Time'"
+        'daily': "DATE(created_at)",
+        'weekly': "DATE_FORMAT(created_at, '%%x-%%v')",
+        'monthly': "DATE_FORMAT(created_at, '%%Y-%%m')",  # Fixed
+        'quarterly': "CONCAT(YEAR(created_at), '-Q', QUARTER(created_at))",
+        'yearly': "YEAR(created_at)",
+        'lifetime': "'All Time'"
     }
+
     STATUS_CONDITIONS = {
-        'submitted': "lamc.approved_at IS NULL AND lamc.rejected_at IS NULL",
-        'approved':  "lamc.approved_at IS NOT NULL",
-        'rejected':  "lamc.rejected_at IS NOT NULL",
-        'all':       "1"
+        'submitted': "(approved_at IS NULL AND rejected_at IS NULL)",
+        'approved': "(approved_at IS NOT NULL)",
+        'rejected': "(rejected_at IS NOT NULL)",
+        'all': "1=1"
     }
+
     if grouping not in GROUPING_SQL or status not in STATUS_CONDITIONS:
         return jsonify(error='Invalid grouping or status'), 400
 
     period_expr = GROUPING_SQL[grouping]
     status_where = STATUS_CONDITIONS[status]
 
+    # Build global filter conditions
+    where_clause, filter_params = build_filter_conditions(payload)
+    
+    # Fix: Handle empty params properly
+    if where_clause == "1=1":
+        user_where = "1=1"
+        params = []
+    else:
+        # Add table aliases for user fields
+        for field in ['state', 'city', 'school_code', 'type', 'grade', 'gender']:
+            where_clause = where_clause.replace(f"{field} =", f"u.{field} =")
+        # Fix date column ambiguity
+        where_clause = where_clause.replace("created_at >=", "u.created_at >=")
+        where_clause = where_clause.replace("created_at <=", "u.created_at <=")
+        user_where = where_clause
+        params = filter_params
+
     sql = f"""
     SELECT
         {period_expr} AS period,
-        COUNT(*) AS count
-    FROM lifeapp.la_mission_assigns lama
-    INNER JOIN lifeapp.la_missions lam
-        ON lam.id = lama.la_mission_id
-    INNER JOIN lifeapp.la_mission_completes lamc
-        ON lama.user_id = lamc.user_id
-        AND lama.la_mission_id = lamc.la_mission_id
-    INNER JOIN lifeapp.users u ON u.id = lama.user_id
-    WHERE lam.allow_for = 2
-      AND {status_where}
+        SUM(count) AS count
+    FROM (
+        -- Vision PBL
+        SELECT
+            vqa.created_at AS created_at,
+            COUNT(*) AS count
+        FROM lifeapp.vision_question_answers vqa
+        INNER JOIN lifeapp.users u ON vqa.user_id = u.id
+        WHERE vqa.approved_at IS NOT NULL
+          AND EXISTS (
+              SELECT 1 FROM lifeapp.vision_assigns va
+              WHERE va.vision_id = vqa.vision_id AND va.student_id = vqa.user_id
+          )
+          AND {status_where.replace('approved_at', 'vqa.approved_at').replace('rejected_at', 'vqa.rejected_at')}
+          AND ({user_where})
+        GROUP BY vqa.created_at
+
+        UNION ALL
+
+        -- Mission PBL (type = 1)
+        SELECT
+            lamc.created_at AS created_at,
+            COUNT(*) AS count
+        FROM lifeapp.la_mission_completes lamc
+        INNER JOIN lifeapp.users u ON lamc.user_id = u.id
+        WHERE lamc.approved_at IS NOT NULL
+          AND EXISTS (
+              SELECT 1 FROM lifeapp.la_mission_assigns lma
+              WHERE lma.la_mission_id = lamc.la_mission_id
+                AND lma.user_id = lamc.user_id
+                AND lma.type = 1
+          )
+          AND {status_where.replace('approved_at', 'lamc.approved_at').replace('rejected_at', 'lamc.rejected_at')}
+          AND ({user_where})
+        GROUP BY lamc.created_at
+
+        UNION ALL
+
+        -- Jigyasa PBL (type = 5)
+        SELECT
+            lamc.created_at AS created_at,
+            COUNT(*) AS count
+        FROM lifeapp.la_mission_completes lamc
+        INNER JOIN lifeapp.users u ON lamc.user_id = u.id
+        WHERE lamc.approved_at IS NOT NULL
+          AND EXISTS (
+              SELECT 1 FROM lifeapp.la_mission_assigns lma
+              WHERE lma.la_mission_id = lamc.la_mission_id
+                AND lma.user_id = lamc.user_id
+                AND lma.type = 5
+          )
+          AND {status_where.replace('approved_at', 'lamc.approved_at').replace('rejected_at', 'lamc.rejected_at')}
+          AND ({user_where})
+        GROUP BY lamc.created_at
+
+        UNION ALL
+
+        -- Pragya PBL (type = 6)
+        SELECT
+            lamc.created_at AS created_at,
+            COUNT(*) AS count
+        FROM lifeapp.la_mission_completes lamc
+        INNER JOIN lifeapp.users u ON lamc.user_id = u.id
+        WHERE lamc.approved_at IS NOT NULL
+          AND EXISTS (
+              SELECT 1 FROM lifeapp.la_mission_assigns lma
+              WHERE lma.la_mission_id = lamc.la_mission_id
+                AND lma.user_id = lamc.user_id
+                AND lma.type = 6
+          )
+          AND {status_where.replace('approved_at', 'lamc.approved_at').replace('rejected_at', 'lamc.rejected_at')}
+          AND ({user_where})
+        GROUP BY lamc.created_at
+    ) AS combined
+    GROUP BY period
+    ORDER BY MIN(created_at);
     """
-
-    where_clause, filter_params = build_filter_conditions(payload)
-    params = []
-    if where_clause and where_clause != "1=1":
-        for field in ['state', 'city', 'school_code', 'type', 'grade', 'gender']:
-            where_clause = where_clause.replace(f"{field} =", f"u.{field} =")
-        sql += f" AND {where_clause}"
-        params = filter_params
-
-    sql += " GROUP BY period ORDER BY period;"
 
     conn = get_db_connection()
     try:
         with conn.cursor() as cursor:
-            cursor.execute(sql, params)
+            # Fix: Multiply params for each UNION branch
+            final_params = params * 4 if params else []
+            cursor.execute(sql, final_params)
             results = cursor.fetchall()
+        return jsonify(data=results), 200
+    except Exception as e:
+        logger.error(f"PBL submissions error: {str(e)}")
+        return jsonify({"error": str(e)}), 500
     finally:
         conn.close()
-    return jsonify(data=results)
+
+@app.route('/api/PBLsubmissions/total', methods=['GET', 'POST'])
+def get_total_PBLsubmissions():
+    # Parse filters from GET (query) or POST (body)
+    filters = {}
+    if request.method == 'POST':
+        filters = request.get_json() or {}
+    else:  # GET
+        filters = {k: v for k, v in request.args.items()}
+
+    where_clause, filter_params = build_filter_conditions(filters)
+    
+    # Fix: Handle empty params
+    if where_clause == "1=1":
+        final_where = "1=1"
+        params = []
+    else:
+        # Prefix user fields with 'u.'
+        for field in ['state', 'city', 'school_code', 'type', 'grade', 'gender']:
+            where_clause = where_clause.replace(f"{field} =", f"u.{field} =")
+        # Fix date column ambiguity
+        where_clause = where_clause.replace("created_at >=", "u.created_at >=")
+        where_clause = where_clause.replace("created_at <=", "u.created_at <=")
+        final_where = where_clause
+        params = filter_params
+
+    sql = f"""
+        SELECT
+            (
+                SELECT COUNT(*)
+                FROM lifeapp.vision_question_answers vqa
+                INNER JOIN lifeapp.users u ON vqa.user_id = u.id
+                WHERE vqa.approved_at IS NOT NULL
+                  AND EXISTS (
+                      SELECT 1
+                      FROM lifeapp.vision_assigns va
+                      WHERE va.vision_id = vqa.vision_id
+                        AND va.student_id = vqa.user_id
+                  )
+                  {f" AND {final_where}" if final_where != "1=1" else ""}
+            ) AS vision_completions,
+
+            (
+                SELECT COUNT(*)
+                FROM lifeapp.la_mission_completes lmc
+                INNER JOIN lifeapp.users u ON lmc.user_id = u.id
+                WHERE lmc.approved_at IS NOT NULL
+                  AND EXISTS (
+                      SELECT 1
+                      FROM lifeapp.la_mission_assigns lma
+                      WHERE lma.la_mission_id = lmc.la_mission_id
+                        AND lma.user_id = lmc.user_id
+                        AND lma.type = 1
+                  )
+                  {f" AND {final_where}" if final_where != "1=1" else ""}
+            ) AS mission_completions,
+
+            (
+                SELECT COUNT(*)
+                FROM lifeapp.la_mission_completes lmc
+                INNER JOIN lifeapp.users u ON lmc.user_id = u.id
+                WHERE lmc.approved_at IS NOT NULL
+                  AND EXISTS (
+                      SELECT 1
+                      FROM lifeapp.la_mission_assigns lma
+                      WHERE lma.la_mission_id = lmc.la_mission_id
+                        AND lma.user_id = lmc.user_id
+                        AND lma.type = 5
+                  )
+                  {f" AND {final_where}" if final_where != "1=1" else ""}
+            ) AS jigyasa_completions,
+
+            (
+                SELECT COUNT(*)
+                FROM lifeapp.la_mission_completes lmc
+                INNER JOIN lifeapp.users u ON lmc.user_id = u.id
+                WHERE lmc.approved_at IS NOT NULL
+                  AND EXISTS (
+                      SELECT 1
+                      FROM lifeapp.la_mission_assigns lma
+                      WHERE lma.la_mission_id = lmc.la_mission_id
+                        AND lma.user_id = lmc.user_id
+                        AND lma.type = 6
+                  )
+                  {f" AND {final_where}" if final_where != "1=1" else ""}
+            ) AS pragya_completions;
+    """
+    
+    connection = get_db_connection()
+    try:
+        with connection.cursor() as cursor:
+            # Fix: Multiply params for each subquery
+            final_params = params * 4 if params else []
+            cursor.execute(sql, final_params)
+            result = cursor.fetchone()
+            total = sum([
+                result.get('vision_completions', 0),
+                result.get('mission_completions', 0),
+                result.get('jigyasa_completions', 0),
+                result.get('pragya_completions', 0)
+            ])
+        return jsonify({"total": total}), 200
+    except Exception as e:
+        logger.error(f"PBL total error: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+    finally:
+        connection.close()
 
 @app.route('/api/students-by-grade-over-time', methods=['POST'])
 def get_students_by_grade_over_time():
@@ -1353,33 +1732,50 @@ def get_teachers_by_grade_over_time():
     }
     period_expr = period_expr_map.get(grouping, period_expr_map['monthly'])
 
+    # Build filter conditions WITHOUT date range
+    filters_no_date = {k: v for k, v in req.items() if k not in ['date_range', 'start_date', 'end_date']}
+    where_clause, filter_params = build_filter_conditions(filters_no_date)
+    for field in ['state', 'city', 'school_code', 'type', 'grade', 'gender']:
+        where_clause = where_clause.replace(f"{field} =", f"u.{field} =")
+
+    # Handle date range manually on tg.created_at
+    date_filter_sql = ""
+    if req.get('date_range') and req['date_range'] != 'All':
+        dr = req['date_range']
+        if dr == 'last7days':
+            date_filter_sql = " AND tg.created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)"
+        elif dr == 'last30days':
+            date_filter_sql = " AND tg.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)"
+        elif dr == 'last3months':
+            date_filter_sql = " AND tg.created_at >= DATE_SUB(NOW(), INTERVAL 3 MONTH)"
+        elif dr == 'last6months':
+            date_filter_sql = " AND tg.created_at >= DATE_SUB(NOW(), INTERVAL 6 MONTH)"
+        elif dr == 'lastyear':
+            date_filter_sql = " AND tg.created_at >= DATE_SUB(NOW(), INTERVAL 1 YEAR)"
+    elif req.get('start_date') and req.get('end_date'):
+        date_filter_sql = " AND tg.created_at >= %s AND tg.created_at <= %s"
+        filter_params.extend([req['start_date'], req['end_date']])
+
+    sql = f"""
+        SELECT 
+            {period_expr} AS period,
+            COALESCE(tg.la_grade_id, 'Unspecified') AS grade,
+            COUNT(*) AS count
+        FROM lifeapp.la_teacher_grades tg
+        INNER JOIN lifeapp.users u ON tg.user_id = u.id
+        WHERE {where_clause}
+        {date_filter_sql}
+        GROUP BY period, COALESCE(tg.la_grade_id, 'Unspecified')
+        ORDER BY period, grade
+    """
+    connection = get_db_connection()
     try:
-        connection = get_db_connection()
         with connection.cursor() as cursor:
-            where_clause, filter_params = build_filter_conditions(req)
-
-            # Prefix user-related fields with `u.` because we JOIN users as `u`
-            for field in ['state', 'city', 'school_code', 'type', 'grade', 'gender']:
-                where_clause = where_clause.replace(f"{field} =", f"u.{field} =")
-
-            sql = f"""
-                SELECT 
-                    {period_expr} AS period,
-                    COALESCE(tg.la_grade_id, 'Unspecified') AS grade,
-                    COUNT(*) AS count
-                FROM lifeapp.la_teacher_grades tg
-                INNER JOIN lifeapp.users u ON tg.user_id = u.id
-                WHERE {where_clause}
-                GROUP BY period, COALESCE(tg.la_grade_id, 'Unspecified')
-                ORDER BY period, grade
-            """
             cursor.execute(sql, filter_params)
             result = cursor.fetchall()
         return jsonify(result), 200
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
     finally:
-        connection.close() 
+        connection.close()
 
 @app.route('/api/demograph-students-2', methods=['POST'])
 def get_demograph_students_2():
@@ -1509,13 +1905,40 @@ def get_schools_demograph_main_dashboard():
     try:
         connection = get_db_connection()
         with connection.cursor() as cursor:
-            where_clause, params = build_filter_conditions(req)
-            # For schools, prefix with `s.`
-            for f in ['state', 'city']:
-                where_clause = where_clause.replace(f"{f} =", f"s.{f} =")
-            # Note: school_code → s.code, but build_filter_conditions uses 'school_code'
-            where_clause = where_clause.replace("school_code =", "s.code =")
+            # Build user filter conditions FIRST
+            user_filters = {k: v for k, v in req.items()}
+            # Remove date filters temporarily — we'll apply them on schools (s.created_at)
+            date_range = user_filters.pop('date_range', None)
+            start_date = user_filters.pop('start_date', None)
+            end_date = user_filters.pop('end_date', None)
 
+            # Build WHERE clause for users
+            user_where, user_params = build_filter_conditions(user_filters)
+
+            # Prefix user fields with 'u.'
+            if user_where != "1=1":
+                for field in ['state', 'city', 'school_code', 'type', 'grade', 'gender']:
+                    user_where = user_where.replace(f"{field} =", f"u.{field} =")
+
+            # Now build school-level date filter (on s.created_at)
+            school_date_sql = ""
+            school_date_params = []
+            if date_range and date_range != 'All':
+                if date_range == 'last7days':
+                    school_date_sql = " AND s.created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)"
+                elif date_range == 'last30days':
+                    school_date_sql = " AND s.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)"
+                elif date_range == 'last3months':
+                    school_date_sql = " AND s.created_at >= DATE_SUB(NOW(), INTERVAL 3 MONTH)"
+                elif date_range == 'last6months':
+                    school_date_sql = " AND s.created_at >= DATE_SUB(NOW(), INTERVAL 6 MONTH)"
+                elif date_range == 'lastyear':
+                    school_date_sql = " AND s.created_at >= DATE_SUB(NOW(), INTERVAL 1 YEAR)"
+            elif start_date and end_date:
+                school_date_sql = " AND s.created_at >= %s AND s.created_at <= %s"
+                school_date_params = [start_date, end_date]
+
+            # Final query: find schools that have users matching the filters
             sql = f"""
                 SELECT 
                     {period_expr} AS period,
@@ -1524,11 +1947,21 @@ def get_schools_demograph_main_dashboard():
                 FROM lifeapp.schools s
                 WHERE s.is_life_lab = 1 
                   AND s.deleted_at IS NULL
-                  AND {where_clause}
+                  {school_date_sql}
+                  AND s.id IN (
+                    SELECT DISTINCT u.school_id
+                    FROM lifeapp.users u
+                    WHERE u.school_id IS NOT NULL
+                      AND {user_where}
+                  )
                 GROUP BY period, s.state
                 ORDER BY period, count DESC
             """
-            cursor.execute(sql, params)
+
+            # Combine params: user_params + school_date_params
+            all_params = user_params + school_date_params
+
+            cursor.execute(sql, all_params)
             rows = cursor.fetchall()
             result = [{"period": r['period'], "state": r['state'], "count": r['count']} for r in rows]
         return jsonify(result), 200
@@ -1600,7 +2033,142 @@ def student_count_by_level_over_time():
     finally:
         connection.close()
 
+@app.route('/api/teacher-assign-count', methods=['GET', 'POST'])
+def get_teacher_assign_count():
+    try:
+        connection = get_db_connection()
+        with connection.cursor() as cursor:
+            filters = {}
+            if request.method == 'POST':
+                filters = request.get_json() or {}
+            elif request.method == 'GET':
+                filters = dict(request.args)
 
+            #  EXCLUDE DATE FILTERS from build_filter_conditions
+            filters_no_date = {
+                k: v for k, v in filters.items()
+                if k not in ('date_range', 'start_date', 'end_date')
+            }
+
+            sql = """
+                SELECT ma.teacher_id, COUNT(*) AS assign_count 
+                FROM lifeapp.la_mission_assigns ma
+                INNER JOIN lifeapp.users u ON u.id = ma.teacher_id
+                WHERE 1=1
+            """
+
+            # Build non-date filters
+            where_clause, filter_params = build_filter_conditions(filters_no_date)
+            params = []
+
+            if where_clause != "1=1":
+                if "type != 3" in where_clause:
+                    where_clause = where_clause.replace("type != 3", "u.type != 3")
+
+                for field in ['state', 'city', 'school_code', 'type', 'grade', 'gender']:
+                    where_clause = where_clause.replace(f"{field} =", f"u.{field} =")
+                sql += f" AND {where_clause}"
+                params = filter_params
+
+            #  APPLY DATE FILTERS ON ma.created_at
+            if filters.get('date_range') and filters['date_range'] != 'All':
+                dr = filters['date_range']
+                if dr == 'last7days':
+                    sql += " AND ma.created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)"
+                elif dr == 'last30days':
+                    sql += " AND ma.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)"
+                elif dr == 'last3months':
+                    sql += " AND ma.created_at >= DATE_SUB(NOW(), INTERVAL 3 MONTH)"
+                elif dr == 'last6months':
+                    sql += " AND ma.created_at >= DATE_SUB(NOW(), INTERVAL 6 MONTH)"
+                elif dr == 'lastyear':
+                    sql += " AND ma.created_at >= DATE_SUB(NOW(), INTERVAL 1 YEAR)"
+            elif filters.get('start_date') and filters.get('end_date'):
+                sql += " AND ma.created_at >= %s AND ma.created_at <= %s"
+                params.extend([filters['start_date'], filters['end_date']])
+
+            sql += " GROUP BY ma.teacher_id"
+
+            cursor.execute(sql, params)
+            result = cursor.fetchall()
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    finally:
+        connection.close()
+
+@app.route('/api/coupons-used-count', methods=['GET', 'POST'])
+def get_coupons_used_count():
+    try:
+        # Parse filters
+        filters = {}
+        if request.method == 'POST':
+            filters = request.get_json() or {}
+        elif request.method == 'GET':
+            filters = dict(request.args)
+
+        # Build user filter conditions (excluding date range)
+        filters_no_date = {
+            k: v for k, v in filters.items()
+            if k not in ('date_range', 'start_date', 'end_date')
+        }
+        where_clause, filter_params = build_filter_conditions(filters_no_date)
+
+        # 🔧 FIX: Handle ambiguous 'type' in complex conditions like "type != 3"
+        if "type != 3" in where_clause:
+            where_clause = where_clause.replace("type != 3", "u.type != 3")
+
+        # Now safely prefix all simple "field =" patterns
+        for field in ['state', 'city', 'school_code', 'type', 'grade', 'gender']:
+            where_clause = where_clause.replace(f"{field} =", f"u.{field} =")
+
+        # Set user_where
+        user_where = where_clause if where_clause != "1=1" else "1=1"
+
+        # Build date filter manually on cr.created_at
+        date_sql = ""
+        date_params = []
+        if filters.get('date_range') and filters['date_range'] != 'All':
+            dr = filters['date_range']
+            if dr == 'last7days':
+                date_sql = " AND cr.created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)"
+            elif dr == 'last30days':
+                date_sql = " AND cr.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)"
+            elif dr == 'last3months':
+                date_sql = " AND cr.created_at >= DATE_SUB(NOW(), INTERVAL 3 MONTH)"
+            elif dr == 'last6months':
+                date_sql = " AND cr.created_at >= DATE_SUB(NOW(), INTERVAL 6 MONTH)"
+            elif dr == 'lastyear':
+                date_sql = " AND cr.created_at >= DATE_SUB(NOW(), INTERVAL 1 YEAR)"
+        elif filters.get('start_date') and filters.get('end_date'):
+            date_sql = " AND cr.created_at >= %s AND cr.created_at <= %s"
+            date_params = [filters['start_date'], filters['end_date']]
+
+        sql = f"""
+            SELECT 
+                -ct.amount AS amount,
+                COUNT(*) AS coupon_count 
+            FROM lifeapp.coin_transactions ct
+            INNER JOIN lifeapp.coupon_redeems cr ON ct.coinable_id = cr.id
+            INNER JOIN lifeapp.users u ON u.id = ct.user_id
+            WHERE ct.amount < 0
+              AND ct.coinable_type = 'App\\\\Models\\\\CouponRedeem'
+              AND ({user_where})
+              {date_sql}
+            GROUP BY ct.amount
+            ORDER BY ct.amount ASC
+        """
+
+        final_params = filter_params + date_params
+        connection = get_db_connection()
+        with connection.cursor() as cursor:
+            cursor.execute(sql, final_params)
+            result = cursor.fetchall()
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    finally:
+        connection.close()
 
 @app.route('/api/user-signups', methods=['GET'])
 def get_user_signups():
@@ -1821,82 +2389,6 @@ def get_approval_rate():
     finally:
         connection.close()
 
-@app.route('/api/coupons-used-count', methods=['GET', 'POST'])
-def get_coupons_used_count():
-    try:
-        connection = get_db_connection()
-        with connection.cursor() as cursor:
-            # Get filter parameters
-            filters = {}
-            if request.method == 'POST':
-                filters = request.get_json() or {}
-            elif request.method == 'GET':
-                filters = dict(request.args)
-            
-            sql = """
-                SELECT -ct.amount as amount, count(*) as coupon_count 
-                FROM lifeapp.coin_transactions ct
-                INNER JOIN lifeapp.users u ON u.id = ct.user_id
-                WHERE ct.amount < 0
-            """
-            params = []
-            
-            # Add filters
-            where_clause, filter_params = build_filter_conditions(filters)
-            if where_clause and where_clause != "1=1":
-                # Adapt table aliases to our query (s. -> u. for schools, since user is already joined)
-                where_clause = where_clause.replace('s.', 'u.')
-                sql += f" AND {where_clause}"
-                params.extend(filter_params)
-            
-            sql += " GROUP BY ct.coinable_type, ct.amount ORDER BY ct.amount ASC"
-            
-            cursor.execute(sql, params)
-            result = cursor.fetchall()
-            print("Query Result:", result)  # Debugging statement
-        return jsonify(result)
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-    finally:
-        connection.close()
-
-@app.route('/api/teacher-assign-count', methods=['GET', 'POST'])
-def get_teacher_assign_count():
-    try:
-        connection = get_db_connection()
-        with connection.cursor() as cursor:
-            # Get filter parameters
-            filters = {}
-            if request.method == 'POST':
-                filters = request.get_json() or {}
-            elif request.method == 'GET':
-                filters = dict(request.args)
-            
-            sql = """
-                SELECT ma.teacher_id, count(*) as assign_count 
-                FROM lifeapp.la_mission_assigns ma
-                INNER JOIN lifeapp.users u ON u.id = ma.teacher_id
-                WHERE 1=1
-            """
-            params = []
-            
-            # Add filters
-            where_clause, filter_params = build_filter_conditions(filters)
-            if where_clause and where_clause != "1=1":
-                # Adapt table aliases to our query
-                where_clause = where_clause.replace('s.', 'u.')
-                sql += f" AND {where_clause}"
-                params.extend(filter_params)
-            
-            sql += " GROUP BY ma.teacher_id"
-            
-            cursor.execute(sql, params)
-            result = cursor.fetchall()
-        return jsonify(result)
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-    finally:
-        connection.close()
 
 @app.route('/api/count-school-state', methods= ['GET', 'POST'])
 def get_count_school_rate():
@@ -3942,50 +4434,7 @@ def get_quiz_participation_rate():
 
     
 
-@app.route('/api/PBLsubmissions/total', methods=['GET', 'POST'])
-def get_total_PBLsubmissions():
-    # Get filter parameters
-    filters = {}
-    if request.method == 'POST':
-        filters = request.get_json() or {}
-    elif request.method == 'GET':
-        filters = dict(request.args)
-    
-    sql = """
-    SELECT
-        COUNT(*) AS total
-    FROM lifeapp.la_mission_assigns lama
-    INNER JOIN lifeapp.la_missions lam
-        ON lam.id = lama.la_mission_id
-    INNER JOIN lifeapp.la_mission_completes lamc
-        ON lama.user_id = lamc.user_id
-        AND lama.la_mission_id = lamc.la_mission_id
-    INNER JOIN lifeapp.users u ON u.id = lama.user_id
-    WHERE lam.allow_for = 2
-    """
-    params = []
-    
-    # Add global filters
-    where_clause, filter_params = build_filter_conditions(filters)
-    if where_clause and where_clause != "1=1":
-        # Join with schools table if school-related filters are present
-        if 's.' in where_clause:
-            sql = sql.replace('INNER JOIN lifeapp.users u ON u.id = lama.user_id', 
-                            'INNER JOIN lifeapp.users u ON u.id = lama.user_id LEFT JOIN lifeapp.schools s ON u.school_id = s.id')
-        sql += f" AND {where_clause}"
-        params.extend(filter_params)
-
-    conn = get_db_connection()
-    try:
-        with conn.cursor() as cursor:
-            cursor.execute(sql, params)
-            result = cursor.fetchone()
-            total = result.get('total', 0) if result else 0
-    finally:
-        conn.close()
-
-    return jsonify(total=total)
-    
+   
 
 
 @app.route('/api/vision-answer-summary', methods=['GET'])

@@ -39,6 +39,7 @@ import {
   Title,
   Tooltip as ChartJSTooltip,
   Legend,
+  ChartOptions,
   ArcElement,
 } from "chart.js";
 ChartJS.register(
@@ -1741,6 +1742,10 @@ export default function UserAnalyticsDashboard() {
     animation: { animateScale: true },
   };
   const [assignCounts, setAssignCounts] = useState<number[]>([]);
+  
+  const [teacherAssignCounts, setTeacherAssignCounts] = useState<number[]>([]);
+  const [teacherAssignChartData, setTeacherAssignChartData] = useState<{ assignmentCount: number; teacherCount: number }[]>([]);
+
 
   useEffect(() => {
     async function fetchTeacherAssignCounts() {
@@ -1751,16 +1756,36 @@ export default function UserAnalyticsDashboard() {
           body: JSON.stringify(buildFilterParams(appliedFilters)),
         });
         const data = await res.json();
-        if (Array.isArray(data) && data.length > 0) {
-          const counts = data.map(
-            (item: { assign_count: number }) => item.assign_count
-          );
-          setAssignCounts(counts);
+        if (Array.isArray(data)) {
+          // Extract raw assign_count values
+          const counts = data.map((item: { assign_count: number }) => item.assign_count);
+          setTeacherAssignCounts(counts);
+
+          // Build frequency map: assignmentCount => number of teachers
+          const freqMap: Record<number, number> = {};
+          counts.forEach((count) => {
+            freqMap[count] = (freqMap[count] || 0) + 1;
+          });
+
+          // Determine max assignment count
+          const maxCount = Math.max(...counts, 0);
+
+          // Generate complete series from 1 to maxCount (including zeros)
+          const chartData = [];
+          for (let i = 1; i <= maxCount; i++) {
+            chartData.push({
+              assignmentCount: i,
+              teacherCount: freqMap[i] || 0,
+            });
+          }
+
+          setTeacherAssignChartData(chartData);
         } else {
-          setAssignCounts([]);
+          setTeacherAssignChartData([]);
         }
       } catch (error) {
         console.error("Error fetching teacher assignment counts:", error);
+        setTeacherAssignChartData([]);
       }
     }
     fetchTeacherAssignCounts();
@@ -1777,49 +1802,52 @@ export default function UserAnalyticsDashboard() {
     else if (count <= 25) binData[4]++;
     else binData[5]++;
   });
+
   const teacherAssignData = {
-    labels: binLabels,
+    labels: teacherAssignChartData.map(item => item.assignmentCount.toString()),
     datasets: [
       {
         label: "Number of Teachers",
-        data: binData,
+        data: teacherAssignChartData.map(item => item.teacherCount),
         backgroundColor: "#4A90E2",
         borderRadius: 5,
       },
     ],
   };
+
   const teacherAssignOptions = {
-    responsive: true,
-    maintainAspectRatio: false,
-    plugins: {
-      ChartJSTooltip: {
-        backgroundColor: "#1f2937",
-        borderColor: "#374151",
-        borderWidth: 1,
-      },
-      legend: { labels: { color: "#333" } },
+  responsive: true,
+  maintainAspectRatio: false,
+  plugins: {
+    tooltip: {
+      backgroundColor: "#1f2937",
+      borderColor: "#374151",
+      borderWidth: 1,
     },
-    scales: {
-      x: {
-        ticks: { color: "#333" },
-        grid: { color: "#eee" },
-        title: {
-          display: true,
-          text: "Assignment Count Range",
-          color: "#333",
-        },
+    legend: { labels: { color: "#333" } },
+  },
+  scales: {
+    x: {
+      type: 'category' as const,
+      title: {
+        display: true,
+        text: "Number of Assignments",
+        color: "#333",
       },
-      y: {
-        ticks: { color: "#333" },
-        grid: { color: "#eee" },
-        title: {
-          display: true,
-          text: "Number of Teachers",
-          color: "#333",
-        },
-      },
+      ticks: { color: "#333" },
     },
-  };
+    y: {
+      beginAtZero: true,
+      title: {
+        display: true,
+        text: "Number of Teachers",
+        color: "#333",
+      },
+      ticks: { color: "#333" },
+    },
+  },
+} satisfies ChartOptions<'bar'>;
+  
   const CustomTooltip: React.FC<TooltipProps<number, string>> = ({
     active,
     payload,
@@ -7412,10 +7440,7 @@ const handleApplyFilters = async () => {
                       <div style={{ height: "300px" }}>
                         <ChartJSBar
                           data={teacherAssignData}
-                          options={{
-                            ...teacherAssignOptions,
-                            plugins: { legend: { display: false } },
-                          }}
+                          options={teacherAssignOptions}
                         />
                       </div>
                     </div>
