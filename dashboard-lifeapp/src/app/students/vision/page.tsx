@@ -123,6 +123,7 @@ export default function VisionSessionsPage() {
   const [rows, setRows] = useState<SessionRow[]>([]);
   const [page, setPage] = useState(1);
   const [perPage] = useState(15);
+  const [totalRows, setTotalRows] = useState(0);
   const [qtype, setQtype] = useState("");
   const [assignedBy, setAssignedBy] = useState("");
   const [dateStart, setDateStart] = useState("");
@@ -219,6 +220,7 @@ const [totalPages, setTotalPages] = useState(1);
       setRows(sessions);
       // --- NEW: Set total pages from API response ---
       setTotalPages(result.total_pages || 1);
+      setTotalRows(result.total || 0);
       // Reset scroll hints when new data loads
       setTimeout(() => {
         updateScrollHints();
@@ -567,19 +569,20 @@ const [totalPages, setTotalPages] = useState(1);
                     <XCircle className="me-2" size={16} />
                     Clear
                   </button>
+                  <button
+                    className="btn btn-purple d-inline-flex align-items-center text-white"
+                    style={{ backgroundColor: "#6f42c1" }}
+                    onClick={exportToCSV}
+                  >
+                    <Download className="me-2" size={16} />
+                    Export
+                  </button>
                 </div>
               </div>
             </div>
-            {/* Export Button */}
-            <div className="d-flex flex-wrap gap-2">
-              <button
-                className="btn btn-purple d-inline-flex align-items-center text-white"
-                style={{ backgroundColor: "#6f42c1" }}
-                onClick={exportToCSV}
-              >
-                <Download className="me-2" size={16} />
-                Export
-              </button>
+            {/* Row count indicator */}
+            <div className="text-muted mb-2">
+              {loading ? "Loading..." : `${totalRows} session${totalRows !== 1 ? 's' : ''} found`}
             </div>
             {/* Sessions Table - Improved Styling */}
             {loading ? (
