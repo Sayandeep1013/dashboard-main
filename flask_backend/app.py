@@ -1054,7 +1054,7 @@ def mission_points_over_time():
     if grouping == 'daily':
         expr = "DATE(lamc.created_at)"
     elif grouping == 'weekly':
-        expr = "CONCAT(YEAR(lamc.created_at), '-', LPAD(WEEK(lamc.created_at, 1), 2, '0'))"
+        expr = "DATE_FORMAT(lamc.created_at, '%%x-%%v')"  # ISO week
     elif grouping == 'monthly':
         expr = "DATE_FORMAT(lamc.created_at, '%%Y-%%M')"
     elif grouping == 'quarterly':
@@ -1064,16 +1064,13 @@ def mission_points_over_time():
     else:
         expr = "'Lifetime'"
 
-    # Build filters WITHOUT date range
     filters_no_date = {k: v for k, v in req.items() if k not in ['date_range', 'start_date', 'end_date']}
     where_clause, params = build_filter_conditions(filters_no_date)
     if "type != 3" in where_clause:
         where_clause = where_clause.replace("type != 3", "u.type != 3")
-
     for field in ['state', 'city', 'school_code', 'type', 'grade', 'gender']:
         where_clause = where_clause.replace(f"{field} =", f"u.{field} =")
 
-    # Manually add date filter on lamc.created_at
     date_sql = ""
     if req.get('date_range') and req['date_range'] != 'All':
         dr = req['date_range']
@@ -1100,7 +1097,7 @@ def mission_points_over_time():
           AND {where_clause}
           {date_sql}
         GROUP BY {expr if grouping != 'lifetime' else 'period'}
-        ORDER BY period ASC
+        ORDER BY MIN(lamc.created_at) ASC
     """
     conn = get_db_connection()
     try:
@@ -1116,11 +1113,10 @@ def quiz_points_over_time():
     req = request.get_json() or {}
     grouping = req.get('grouping', 'monthly')
 
-    # Period expression on lqgr.created_at
     if grouping == 'daily':
         expr = "DATE(lqgr.created_at)"
     elif grouping == 'weekly':
-        expr = "CONCAT(YEAR(lqgr.created_at), '-', LPAD(WEEK(lqgr.created_at, 1), 2, '0'))"
+        expr = "DATE_FORMAT(lqgr.created_at, '%%x-%%v')"  #  ISO week
     elif grouping == 'monthly':
         expr = "DATE_FORMAT(lqgr.created_at, '%%Y-%%M')"
     elif grouping == 'quarterly':
@@ -1130,7 +1126,6 @@ def quiz_points_over_time():
     else:
         expr = "'Lifetime'"
 
-    # Build filters WITHOUT date range
     filters_no_date = {k: v for k, v in req.items() if k not in ['date_range', 'start_date', 'end_date']}
     where_clause, params = build_filter_conditions(filters_no_date)
     if "type != 3" in where_clause:
@@ -1138,7 +1133,6 @@ def quiz_points_over_time():
     for field in ['state', 'city', 'school_code', 'type', 'grade', 'gender']:
         where_clause = where_clause.replace(f"{field} =", f"u.{field} =")
 
-    # Manual date filter on lqgr.created_at
     date_sql = ""
     if req.get('date_range') and req['date_range'] != 'All':
         dr = req['date_range']
@@ -1164,7 +1158,7 @@ def quiz_points_over_time():
           AND {where_clause}
           {date_sql}
         GROUP BY {expr if grouping != 'lifetime' else 'period'}
-        ORDER BY period ASC
+        ORDER BY MIN(lqgr.created_at) ASC  --  Chronological sort
     """
     conn = get_db_connection()
     try:
@@ -1183,7 +1177,7 @@ def jigyasa_points_over_time():
     if grouping == 'daily':
         expr = "DATE(lamc.created_at)"
     elif grouping == 'weekly':
-        expr = "CONCAT(YEAR(lamc.created_at), '-', LPAD(WEEK(lamc.created_at, 1), 2, '0'))"
+        expr = "DATE_FORMAT(lamc.created_at, '%%x-%%v')"  #  ISO week
     elif grouping == 'monthly':
         expr = "DATE_FORMAT(lamc.created_at, '%%Y-%%M')"
     elif grouping == 'quarterly':
@@ -1226,7 +1220,7 @@ def jigyasa_points_over_time():
           AND {where_clause}
           {date_sql}
         GROUP BY {expr if grouping != 'lifetime' else 'period'}
-        ORDER BY period ASC
+        ORDER BY MIN(lamc.created_at) ASC  --  Chronological sort
     """
     conn = get_db_connection()
     try:
@@ -1245,7 +1239,7 @@ def pragya_points_over_time():
     if grouping == 'daily':
         expr = "DATE(lamc.created_at)"
     elif grouping == 'weekly':
-        expr = "CONCAT(YEAR(lamc.created_at), '-', LPAD(WEEK(lamc.created_at, 1), 2, '0'))"
+        expr = "DATE_FORMAT(lamc.created_at, '%%x-%%v')"  #  ISO week
     elif grouping == 'monthly':
         expr = "DATE_FORMAT(lamc.created_at, '%%Y-%%M')"
     elif grouping == 'quarterly':
@@ -1288,7 +1282,7 @@ def pragya_points_over_time():
           AND {where_clause}
           {date_sql}
         GROUP BY {expr if grouping != 'lifetime' else 'period'}
-        ORDER BY period ASC
+        ORDER BY MIN(lamc.created_at) ASC  -- Chronological sort
     """
     conn = get_db_connection()
     try:
@@ -1307,7 +1301,7 @@ def coupon_redeems_over_time():
     if grouping == 'daily':
         expr = "DATE(cr.created_at)"
     elif grouping == 'weekly':
-        expr = "CONCAT(YEAR(cr.created_at), '-', LPAD(WEEK(cr.created_at, 1), 2, '0'))"
+        expr = "DATE_FORMAT(cr.created_at, '%%x-%%v')"  # ISO week
     elif grouping == 'monthly':
         expr = "DATE_FORMAT(cr.created_at, '%%Y-%%M')"
     elif grouping == 'quarterly':
@@ -1317,7 +1311,6 @@ def coupon_redeems_over_time():
     else:
         expr = "'Lifetime'"
 
-    # Build filters WITHOUT date range
     filters_no_date = {k: v for k, v in req.items() if k not in ['date_range', 'start_date', 'end_date']}
     where_clause, params = build_filter_conditions(filters_no_date)
     if "type != 3" in where_clause:
@@ -1325,7 +1318,6 @@ def coupon_redeems_over_time():
     for field in ['state', 'city', 'school_code', 'type', 'grade', 'gender']:
         where_clause = where_clause.replace(f"{field} =", f"u.{field} =")
 
-    # Manual date filter on cr.created_at
     date_sql = ""
     if req.get('date_range') and req['date_range'] != 'All':
         dr = req['date_range']
@@ -1351,7 +1343,7 @@ def coupon_redeems_over_time():
           AND {where_clause}
           {date_sql}
         GROUP BY {expr if grouping != 'lifetime' else 'period'}
-        ORDER BY period ASC
+        ORDER BY MIN(cr.created_at) ASC  -- Chronological sort
     """
     conn = get_db_connection()
     try:
@@ -1414,7 +1406,7 @@ def vision_score_stats():
           AND {where_clause}
           {date_sql}
         GROUP BY period
-        ORDER BY period
+        ORDER BY MIN(a.created_at) ASC
     """
     conn = get_db_connection()
     try:
@@ -1434,7 +1426,7 @@ def get_PBLsubmissions():
     GROUPING_SQL = {
         'daily': "DATE(created_at)",
         'weekly': "DATE_FORMAT(created_at, '%%x-%%v')",
-        'monthly': "DATE_FORMAT(created_at, '%%Y-%%m')",  # Fixed
+        'monthly': "DATE_FORMAT(created_at, '%%Y-%%m')",
         'quarterly': "CONCAT(YEAR(created_at), '-Q', QUARTER(created_at))",
         'yearly': "YEAR(created_at)",
         'lifetime': "'All Time'"
@@ -1453,18 +1445,14 @@ def get_PBLsubmissions():
     period_expr = GROUPING_SQL[grouping]
     status_where = STATUS_CONDITIONS[status]
 
-    # Build global filter conditions
     where_clause, filter_params = build_filter_conditions(payload)
     
-    # Fix: Handle empty params properly
     if where_clause == "1=1":
         user_where = "1=1"
         params = []
     else:
-        # Add table aliases for user fields
         for field in ['state', 'city', 'school_code', 'type', 'grade', 'gender']:
             where_clause = where_clause.replace(f"{field} =", f"u.{field} =")
-        # Fix date column ambiguity
         where_clause = where_clause.replace("created_at >=", "u.created_at >=")
         where_clause = where_clause.replace("created_at <=", "u.created_at <=")
         user_where = where_clause
@@ -1475,7 +1463,6 @@ def get_PBLsubmissions():
         {period_expr} AS period,
         SUM(count) AS count
     FROM (
-        -- Vision PBL
         SELECT
             vqa.created_at AS created_at,
             COUNT(*) AS count
@@ -1492,7 +1479,6 @@ def get_PBLsubmissions():
 
         UNION ALL
 
-        -- Mission PBL (type = 1)
         SELECT
             lamc.created_at AS created_at,
             COUNT(*) AS count
@@ -1511,7 +1497,6 @@ def get_PBLsubmissions():
 
         UNION ALL
 
-        -- Jigyasa PBL (type = 5)
         SELECT
             lamc.created_at AS created_at,
             COUNT(*) AS count
@@ -1530,7 +1515,6 @@ def get_PBLsubmissions():
 
         UNION ALL
 
-        -- Pragya PBL (type = 6)
         SELECT
             lamc.created_at AS created_at,
             COUNT(*) AS count
@@ -1554,7 +1538,6 @@ def get_PBLsubmissions():
     conn = get_db_connection()
     try:
         with conn.cursor() as cursor:
-            # Fix: Multiply params for each UNION branch
             final_params = params * 4 if params else []
             cursor.execute(sql, final_params)
             results = cursor.fetchall()
@@ -1567,24 +1550,20 @@ def get_PBLsubmissions():
 
 @app.route('/api/PBLsubmissions/total', methods=['GET', 'POST'])
 def get_total_PBLsubmissions():
-    # Parse filters from GET (query) or POST (body)
     filters = {}
     if request.method == 'POST':
         filters = request.get_json() or {}
-    else:  # GET
+    else:
         filters = {k: v for k, v in request.args.items()}
 
     where_clause, filter_params = build_filter_conditions(filters)
     
-    # Fix: Handle empty params
     if where_clause == "1=1":
         final_where = "1=1"
         params = []
     else:
-        # Prefix user fields with 'u.'
         for field in ['state', 'city', 'school_code', 'type', 'grade', 'gender']:
             where_clause = where_clause.replace(f"{field} =", f"u.{field} =")
-        # Fix date column ambiguity
         where_clause = where_clause.replace("created_at >=", "u.created_at >=")
         where_clause = where_clause.replace("created_at <=", "u.created_at <=")
         final_where = where_clause
@@ -1655,7 +1634,6 @@ def get_total_PBLsubmissions():
     connection = get_db_connection()
     try:
         with connection.cursor() as cursor:
-            # Fix: Multiply params for each subquery
             final_params = params * 4 if params else []
             cursor.execute(sql, final_params)
             result = cursor.fetchone()
@@ -1679,7 +1657,7 @@ def get_students_by_grade_over_time():
 
     period_expr_map = {
         'daily': "DATE(u.created_at)",
-        'weekly': "CONCAT(YEAR(u.created_at), '-', LPAD(WEEK(u.created_at, 3), 2, '0'))",
+        'weekly': "DATE_FORMAT(u.created_at, '%%x-%%v')",
         'monthly': "DATE_FORMAT(u.created_at, '%%Y-%%M')",
         'quarterly': "CONCAT(YEAR(u.created_at), '-Q', QUARTER(u.created_at))",
         'yearly': "YEAR(u.created_at)",
@@ -1690,11 +1668,7 @@ def get_students_by_grade_over_time():
     try:
         connection = get_db_connection()
         with connection.cursor() as cursor:
-            # Build filter conditions using build_filter_conditions
             where_clause, filter_params = build_filter_conditions(req)
-
-            # Since we alias users as `u`, we must prefix user fields in where_clause
-            # Replace bare column names with `u.column`
             for field in ['state', 'city', 'school_code', 'type', 'grade', 'gender']:
                 where_clause = where_clause.replace(f"{field} =", f"u.{field} =")
 
@@ -1707,7 +1681,7 @@ def get_students_by_grade_over_time():
                 WHERE u.`type` = 3
                   AND {where_clause}
                 GROUP BY period, IFNULL(u.grade, 'Unspecified')
-                ORDER BY period, grade
+                ORDER BY MIN(u.created_at)
             """
             cursor.execute(sql, filter_params)
             result = cursor.fetchall()
@@ -1724,7 +1698,7 @@ def get_teachers_by_grade_over_time():
 
     period_expr_map = {
         'daily': "DATE(tg.created_at)",
-        'weekly': "CONCAT(YEAR(tg.created_at), '-', LPAD(WEEK(tg.created_at, 3), 2, '0'))",
+        'weekly': "DATE_FORMAT(tg.created_at, '%%x-%%v')",
         'monthly': "DATE_FORMAT(tg.created_at, '%%Y-%%M')",
         'quarterly': "CONCAT(YEAR(tg.created_at), '-Q', QUARTER(tg.created_at))",
         'yearly': "YEAR(tg.created_at)",
@@ -1732,13 +1706,11 @@ def get_teachers_by_grade_over_time():
     }
     period_expr = period_expr_map.get(grouping, period_expr_map['monthly'])
 
-    # Build filter conditions WITHOUT date range
     filters_no_date = {k: v for k, v in req.items() if k not in ['date_range', 'start_date', 'end_date']}
     where_clause, filter_params = build_filter_conditions(filters_no_date)
     for field in ['state', 'city', 'school_code', 'type', 'grade', 'gender']:
         where_clause = where_clause.replace(f"{field} =", f"u.{field} =")
 
-    # Handle date range manually on tg.created_at
     date_filter_sql = ""
     if req.get('date_range') and req['date_range'] != 'All':
         dr = req['date_range']
@@ -1766,7 +1738,7 @@ def get_teachers_by_grade_over_time():
         WHERE {where_clause}
         {date_filter_sql}
         GROUP BY period, COALESCE(tg.la_grade_id, 'Unspecified')
-        ORDER BY period, grade
+        ORDER BY MIN(tg.created_at)
     """
     connection = get_db_connection()
     try:
@@ -1786,7 +1758,7 @@ def get_demograph_students_2():
 
     period_expr_map = {
         'daily': "DATE(u.created_at)",
-        'weekly': "CONCAT(YEAR(u.created_at), '-W', WEEK(u.created_at, 1))",
+        'weekly': "DATE_FORMAT(u.created_at, '%%x-%%v')",
         'monthly': "DATE_FORMAT(u.created_at, '%%Y-%%M')",
         'quarterly': "CONCAT(YEAR(u.created_at), '-Q', QUARTER(u.created_at))",
         'yearly': "YEAR(u.created_at)",
@@ -1798,11 +1770,9 @@ def get_demograph_students_2():
         connection = get_db_connection()
         with connection.cursor() as cursor:
             where_clause, params = build_filter_conditions(req)
-            # Prefix with u.
             for f in ['state', 'city', 'school_code', 'type', 'grade', 'gender']:
                 where_clause = where_clause.replace(f"{f} =", f"u.{f} =")
 
-            # Add student type condition
             if where_clause == "1=1":
                 final_where = "u.type = 3"
             else:
@@ -1820,7 +1790,7 @@ def get_demograph_students_2():
                 FROM lifeapp.users u
                 WHERE {final_where}
                 GROUP BY period, state
-                ORDER BY period, count DESC
+                ORDER BY MIN(u.created_at)
             """
             cursor.execute(sql, params)
             rows = cursor.fetchall()
@@ -1840,7 +1810,7 @@ def get_teacher_demograph_2():
 
     period_expr_map = {
         'daily': "DATE(u.created_at)",
-        'weekly': "CONCAT(YEAR(u.created_at), '-W', WEEK(u.created_at, 1))",
+        'weekly': "DATE_FORMAT(u.created_at, '%%x-%%v')",
         'monthly': "DATE_FORMAT(u.created_at, '%%Y-%%M')",
         'quarterly': "CONCAT(YEAR(u.created_at), '-Q', QUARTER(u.created_at))",
         'yearly': "YEAR(u.created_at)",
@@ -1852,11 +1822,9 @@ def get_teacher_demograph_2():
         connection = get_db_connection()
         with connection.cursor() as cursor:
             where_clause, params = build_filter_conditions(req)
-            # Prefix with u.
             for f in ['state', 'city', 'school_code', 'type', 'grade', 'gender']:
                 where_clause = where_clause.replace(f"{f} =", f"u.{f} =")
 
-            # Add teacher type condition
             if where_clause == "1=1":
                 final_where = "u.type = 5"
             else:
@@ -1874,7 +1842,7 @@ def get_teacher_demograph_2():
                 FROM lifeapp.users u
                 WHERE {final_where}
                 GROUP BY period, state
-                ORDER BY period, count DESC
+                ORDER BY MIN(u.created_at)
             """
             cursor.execute(sql, params)
             rows = cursor.fetchall()
@@ -1894,7 +1862,7 @@ def get_schools_demograph_main_dashboard():
 
     period_expr_map = {
         'daily': "DATE(s.created_at)",
-        'weekly': "CONCAT(YEAR(s.created_at), '-W', WEEK(s.created_at, 1))",
+        'weekly': "DATE_FORMAT(s.created_at, '%%x-%%v')",
         'monthly': "DATE_FORMAT(s.created_at, '%%Y-%%M')",
         'quarterly': "CONCAT(YEAR(s.created_at), '-Q', QUARTER(s.created_at))",
         'yearly': "YEAR(s.created_at)",
@@ -1905,22 +1873,17 @@ def get_schools_demograph_main_dashboard():
     try:
         connection = get_db_connection()
         with connection.cursor() as cursor:
-            # Build user filter conditions FIRST
             user_filters = {k: v for k, v in req.items()}
-            # Remove date filters temporarily — we'll apply them on schools (s.created_at)
             date_range = user_filters.pop('date_range', None)
             start_date = user_filters.pop('start_date', None)
             end_date = user_filters.pop('end_date', None)
 
-            # Build WHERE clause for users
             user_where, user_params = build_filter_conditions(user_filters)
 
-            # Prefix user fields with 'u.'
             if user_where != "1=1":
                 for field in ['state', 'city', 'school_code', 'type', 'grade', 'gender']:
                     user_where = user_where.replace(f"{field} =", f"u.{field} =")
 
-            # Now build school-level date filter (on s.created_at)
             school_date_sql = ""
             school_date_params = []
             if date_range and date_range != 'All':
@@ -1938,7 +1901,6 @@ def get_schools_demograph_main_dashboard():
                 school_date_sql = " AND s.created_at >= %s AND s.created_at <= %s"
                 school_date_params = [start_date, end_date]
 
-            # Final query: find schools that have users matching the filters
             sql = f"""
                 SELECT 
                     {period_expr} AS period,
@@ -1955,12 +1917,10 @@ def get_schools_demograph_main_dashboard():
                       AND {user_where}
                   )
                 GROUP BY period, s.state
-                ORDER BY period, count DESC
+                ORDER BY MIN(s.created_at)
             """
 
-            # Combine params: user_params + school_date_params
             all_params = user_params + school_date_params
-
             cursor.execute(sql, all_params)
             rows = cursor.fetchall()
             result = [{"period": r['period'], "state": r['state'], "count": r['count']} for r in rows]
@@ -1994,7 +1954,7 @@ def student_count_by_level_over_time():
 
     period_expr_map = {
         'daily': "DATE(u.created_at)",
-        'weekly': "CONCAT(YEAR(u.created_at), '-', LPAD(WEEK(u.created_at, 3), 2, '0'))",
+        'weekly': "DATE_FORMAT(u.created_at, '%%x-%%v')",
         'monthly': "DATE_FORMAT(u.created_at, '%%Y-%%M')",
         'quarterly': "CONCAT(YEAR(u.created_at), '-Q', QUARTER(u.created_at))",
         'yearly': "YEAR(u.created_at)",
@@ -2006,11 +1966,9 @@ def student_count_by_level_over_time():
         connection = get_db_connection()
         with connection.cursor() as cursor:
             where_clause, params = build_filter_conditions(req)
-            # Prefix with u.
             for f in ['state', 'city', 'school_code', 'type', 'grade', 'gender']:
                 where_clause = where_clause.replace(f"{f} =", f"u.{f} =")
 
-            # Enforce student type
             if where_clause == "1=1":
                 final_where = "u.type = 3"
             else:
@@ -2023,7 +1981,7 @@ def student_count_by_level_over_time():
                 FROM lifeapp.users u
                 WHERE {final_where}
                 GROUP BY period
-                ORDER BY period
+                ORDER BY MIN(u.created_at)
             """
             cursor.execute(sql, params)
             result = cursor.fetchall()
@@ -2044,13 +2002,11 @@ def get_teacher_assign_count():
             elif request.method == 'GET':
                 filters = dict(request.args)
 
-            # EXCLUDE DATE FILTERS from build_filter_conditions
             filters_no_date = {
                 k: v for k, v in filters.items()
                 if k not in ('date_range', 'start_date', 'end_date')
             }
 
-            # Start SQL: ONLY teachers (type = 5)
             sql = """
                 SELECT ma.teacher_id, COUNT(*) AS assign_count 
                 FROM lifeapp.la_mission_assigns ma
@@ -2058,22 +2014,17 @@ def get_teacher_assign_count():
                 WHERE u.type = 5
             """
 
-            # Build non-date filters
             where_clause, filter_params = build_filter_conditions(filters_no_date)
             params = []
 
-            # Apply filters ONLY if they exist
             if where_clause != "1=1":
-                # Fix ambiguous "type != 3" if present (from school_code logic)
                 if "type != 3" in where_clause:
                     where_clause = where_clause.replace("type != 3", "u.type != 3")
-                # Prefix user fields
                 for field in ['state', 'city', 'school_code', 'type', 'grade', 'gender']:
                     where_clause = where_clause.replace(f"{field} =", f"u.{field} =")
                 sql += f" AND {where_clause}"
                 params = filter_params
 
-            # ===  APPLY TIME FILTERS ON `ma.created_at` ===
             if filters.get('date_range') and filters['date_range'] != 'All':
                 dr = filters['date_range']
                 if dr == 'last7days':
@@ -2084,7 +2035,6 @@ def get_teacher_assign_count():
                     sql += " AND ma.created_at >= DATE_SUB(NOW(), INTERVAL 6 MONTH)"
                 elif dr == 'lastyear':
                     sql += " AND ma.created_at >= DATE_SUB(NOW(), INTERVAL 1 YEAR)"
-                # Note: "lifetime" or "All" → no filter (default)
             elif filters.get('start_date') and filters.get('end_date'):
                 sql += " AND ma.created_at >= %s AND ma.created_at <= %s"
                 params.extend([filters['start_date'], filters['end_date']])
@@ -2102,32 +2052,26 @@ def get_teacher_assign_count():
 @app.route('/api/coupons-used-count', methods=['GET', 'POST'])
 def get_coupons_used_count():
     try:
-        # Parse filters
         filters = {}
         if request.method == 'POST':
             filters = request.get_json() or {}
         elif request.method == 'GET':
             filters = dict(request.args)
 
-        # Build user filter conditions (excluding date range)
         filters_no_date = {
             k: v for k, v in filters.items()
             if k not in ('date_range', 'start_date', 'end_date')
         }
         where_clause, filter_params = build_filter_conditions(filters_no_date)
 
-        # 🔧 FIX: Handle ambiguous 'type' in complex conditions like "type != 3"
         if "type != 3" in where_clause:
             where_clause = where_clause.replace("type != 3", "u.type != 3")
 
-        # Now safely prefix all simple "field =" patterns
         for field in ['state', 'city', 'school_code', 'type', 'grade', 'gender']:
             where_clause = where_clause.replace(f"{field} =", f"u.{field} =")
 
-        # Set user_where
         user_where = where_clause if where_clause != "1=1" else "1=1"
 
-        # Build date filter manually on cr.created_at
         date_sql = ""
         date_params = []
         if filters.get('date_range') and filters['date_range'] != 'All':
@@ -2158,7 +2102,7 @@ def get_coupons_used_count():
               AND ({user_where})
               {date_sql}
             GROUP BY ct.amount
-            ORDER BY ct.amount ASC
+            ORDER BY MIN(cr.created_at)
         """
 
         final_params = filter_params + date_params
@@ -2171,7 +2115,7 @@ def get_coupons_used_count():
         return jsonify({'error': str(e)}), 500
     finally:
         connection.close()
-
+        
 @app.route('/api/user-signups', methods=['GET'])
 def get_user_signups():
     try:
