@@ -582,7 +582,7 @@ def get_histogram_data_level_subject_challenges_complete():
 
     period_expressions = {
         'daily': "DATE(lamc.created_at)",
-        'weekly': "CONCAT(YEAR(lamc.created_at), '-', LPAD(WEEK(lamc.created_at, 1), 2, '0'))",
+        'weekly': "DATE_FORMAT(lamc.created_at, '%%x-%%v')",
         'monthly': "DATE_FORMAT(lamc.created_at, '%%Y-%%M')",
         'quarterly': "CONCAT(YEAR(lamc.created_at), '-Q', QUARTER(lamc.created_at))",
         'yearly': "CAST(YEAR(lamc.created_at) AS CHAR)",
@@ -593,7 +593,7 @@ def get_histogram_data_level_subject_challenges_complete():
     # Build filters WITHOUT date range
     filters_no_date = {k: v for k, v in req.items() if k not in ['date_range', 'start_date', 'end_date']}
     where_clause, params = build_filter_conditions(filters_no_date)
-    #  Fix ambiguous 'type != 3' from school_code logic
+    # Fix ambiguous 'type != 3' from school_code logic
     if "type != 3" in where_clause:
         where_clause = where_clause.replace("type != 3", "u.type != 3")
     for field in ['state', 'city', 'school_code', 'type', 'grade', 'gender']:
@@ -633,7 +633,7 @@ def get_histogram_data_level_subject_challenges_complete():
         {f" AND {where_clause}" if where_clause != "1=1" else ""}
         {date_sql}
         GROUP BY period, lam.la_subject_id, lam.la_level_id
-        ORDER BY period, lam.la_subject_id, lam.la_level_id;
+        ORDER BY MIN(lamc.created_at) ASC, lam.la_subject_id, lam.la_level_id;
     """
 
     if subject_filter:
@@ -650,7 +650,7 @@ def get_histogram_data_level_subject_challenges_complete():
         return jsonify(results), 200
     finally:
         conn.close()
-
+        
 @app.route('/api/histogram_topic_level_subject_quizgames_2', methods=['POST'])
 def get_histogram_topic_level_subject_quizgames_2():
     req = request.get_json() or {}
@@ -714,7 +714,7 @@ def get_histogram_topic_level_subject_quizgames_2():
         {f" AND {where_clause}" if where_clause != "1=1" else ""}
         {date_sql}
         GROUP BY period, lqg.la_subject_id, lat.la_level_id
-        ORDER BY period;
+        ORDER BY MIN(lqgr.created_at) ASC, lqg.la_subject_id, lat.la_level_id;
     """
 
     if subject_filter:
@@ -798,7 +798,7 @@ def vision_completion_stats():
         {f" AND {where_clause}" if where_clause != "1=1" else ""}
         {date_sql}
         GROUP BY period, l.title, s.title, a.status
-        ORDER BY period;
+        ORDER BY MIN(a.created_at) ASC;
     """
 
     execute_params = []
@@ -940,7 +940,7 @@ def get_histogram_data_level_subject_jigyasa_complete():
         {f" AND {where_clause}" if where_clause != "1=1" else ""}
         {date_sql}
         GROUP BY period, lam.la_subject_id, lam.la_level_id
-        ORDER BY period;
+        ORDER BY MIN(lamc.created_at) ASC, lam.la_subject_id, lam.la_level_id;
     """
 
     if subject_filter:
@@ -1028,7 +1028,7 @@ def get_histogram_data_level_subject_pragya_complete():
         {f" AND {where_clause}" if where_clause != "1=1" else ""}
         {date_sql}
         GROUP BY period, lam.la_subject_id, lam.la_level_id
-        ORDER BY period;
+        ORDER BY MIN(lamc.created_at) ASC, lam.la_subject_id, lam.la_level_id;
     """
 
     if subject_filter:
@@ -2044,53 +2044,55 @@ def get_teacher_assign_count():
             elif request.method == 'GET':
                 filters = dict(request.args)
 
-            #  EXCLUDE DATE FILTERS from build_filter_conditions
+            # EXCLUDE DATE FILTERS from build_filter_conditions
             filters_no_date = {
                 k: v for k, v in filters.items()
                 if k not in ('date_range', 'start_date', 'end_date')
             }
 
+            # Start SQL: ONLY teachers (type = 5)
             sql = """
                 SELECT ma.teacher_id, COUNT(*) AS assign_count 
                 FROM lifeapp.la_mission_assigns ma
                 INNER JOIN lifeapp.users u ON u.id = ma.teacher_id
-                WHERE 1=1
+                WHERE u.type = 5
             """
 
             # Build non-date filters
             where_clause, filter_params = build_filter_conditions(filters_no_date)
             params = []
 
+            # Apply filters ONLY if they exist
             if where_clause != "1=1":
+                # Fix ambiguous "type != 3" if present (from school_code logic)
                 if "type != 3" in where_clause:
                     where_clause = where_clause.replace("type != 3", "u.type != 3")
-
+                # Prefix user fields
                 for field in ['state', 'city', 'school_code', 'type', 'grade', 'gender']:
                     where_clause = where_clause.replace(f"{field} =", f"u.{field} =")
                 sql += f" AND {where_clause}"
                 params = filter_params
 
-            #  APPLY DATE FILTERS ON ma.created_at
+            # ===  APPLY TIME FILTERS ON `ma.created_at` ===
             if filters.get('date_range') and filters['date_range'] != 'All':
                 dr = filters['date_range']
                 if dr == 'last7days':
                     sql += " AND ma.created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)"
                 elif dr == 'last30days':
                     sql += " AND ma.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)"
-                elif dr == 'last3months':
-                    sql += " AND ma.created_at >= DATE_SUB(NOW(), INTERVAL 3 MONTH)"
                 elif dr == 'last6months':
                     sql += " AND ma.created_at >= DATE_SUB(NOW(), INTERVAL 6 MONTH)"
                 elif dr == 'lastyear':
                     sql += " AND ma.created_at >= DATE_SUB(NOW(), INTERVAL 1 YEAR)"
+                # Note: "lifetime" or "All" → no filter (default)
             elif filters.get('start_date') and filters.get('end_date'):
                 sql += " AND ma.created_at >= %s AND ma.created_at <= %s"
                 params.extend([filters['start_date'], filters['end_date']])
 
             sql += " GROUP BY ma.teacher_id"
-
             cursor.execute(sql, params)
             result = cursor.fetchall()
+
         return jsonify(result)
     except Exception as e:
         return jsonify({'error': str(e)}), 500

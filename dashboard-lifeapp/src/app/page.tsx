@@ -99,6 +99,9 @@ const inter = Inter({ subsets: ["latin"] });
 // const api_startpoint = "http://152.42.239.141:5000";
 const api_startpoint = "https://admin-api.life-lab.org";
 
+
+import { formatWeeklyXAxisLabel } from '@/components/ui/echartsHelpers';
+
 interface userTypeChart {
   count: number;
   userType: string | null;
@@ -236,7 +239,6 @@ const LazyChart = forwardRef<ReactECharts, {
   const [hasBeenVisible, setHasBeenVisible] = useState(false);
   const [chartError, setChartError] = useState<string | null>(null);
   const chartRef = useRef<HTMLDivElement>(null);
-
   useEffect(() => {
     const observer = new IntersectionObserver(
       ([entry]) => {
@@ -252,21 +254,17 @@ const LazyChart = forwardRef<ReactECharts, {
     }
     return () => observer.disconnect();
   }, [hasBeenVisible]);
-
   // Reset error when option changes
   useEffect(() => {
     setChartError(null);
   }, [option]);
-
   const onChartReady = (echarts: any) => {
     console.log(`Chart ${id} ready`);
   };
-
   const onChartError = (error: any) => {
     console.error(`Chart ${id} error:`, error);
     setChartError('Failed to render chart');
   };
-
   return (
     <div ref={chartRef} id={id}>
       {loading || !isVisible ? (
@@ -296,7 +294,6 @@ const LazyChart = forwardRef<ReactECharts, {
   );
 });
 LazyChart.displayName = 'LazyChart';
-
 // Helper to safely build query string
 const toQueryString = (obj: Record<string, any>) => {
   const params = new URLSearchParams();
@@ -307,7 +304,6 @@ const toQueryString = (obj: Record<string, any>) => {
   });
   return params.toString();
 };
-
 export default function UserAnalyticsDashboard() {
   const router = useRouter();
   useEffect(() => {
@@ -353,11 +349,9 @@ export default function UserAnalyticsDashboard() {
   const [loadingPhase3, setLoadingPhase3] = useState(true);
   const [globalLoading, setGlobalLoading] = useState(true);
   const [applyingFilters, setApplyingFilters] = useState(false); // For Apply Now button
-
   // Helper function to build filter parameters using appliedFilters by default
   const buildFilterParams = (filters = appliedFilters) => {
     const filterParams: any = {};
-
     // Use consistent parameter names that match backend expectations
     if (filters.state !== "All") {
       filterParams.state = filters.state;
@@ -377,7 +371,6 @@ export default function UserAnalyticsDashboard() {
     if (filters.gender !== "All") {
       filterParams.gender = filters.gender;
     }
-
     // Handle date filters - use either date_range OR start_date/end_date
     if (filters.startDate && filters.endDate) {
       filterParams.start_date = filters.startDate;
@@ -385,11 +378,8 @@ export default function UserAnalyticsDashboard() {
     } else if (filters.dateRange !== "All") {
       filterParams.date_range = filters.dateRange;
     }
-
     return filterParams;
   };
-
-
   // Parallel loading functions for better performance
   const loadEssentialMetrics = async (filters = appliedFilters) => {
     setLoadingPhase1(true);
@@ -457,7 +447,6 @@ export default function UserAnalyticsDashboard() {
       setLoadingPhase1(false);
     }
   };
-
   const loadPrimaryCharts = async (filters = appliedFilters) => {
     setLoadingPhase2(true);
     const filterParams = buildFilterParams(filters);
@@ -479,13 +468,11 @@ export default function UserAnalyticsDashboard() {
           body: JSON.stringify(filterParams),
         }),
       ]);
-
       const [userTypeData, stateCountsData, couponRedeemData] = await Promise.all([
         userTypeDataRes.json().catch(() => []),
         stateCountsRes.json().catch(() => []),
         couponRedeemRes.json().catch(() => []),
       ]);
-
       // Remove all signupData handling
       setUserTypeData(Array.isArray(userTypeData) ? userTypeData : []);
       setStateCounts(Array.isArray(stateCountsData) ? stateCountsData : []);
@@ -499,14 +486,12 @@ export default function UserAnalyticsDashboard() {
       setLoadingPhase2(false);
     }
   };
-
   const loadDetailedAnalytics = async (filters = appliedFilters) => {
     setLoadingPhase3(true);
     const filterParams = buildFilterParams(filters);
     try {
       const queryStringNewSignups = toQueryString(filterParams);
       const queryStringApprovalRate = toQueryString(filterParams);
-
       const [newSignupsRes, approvalRateRes, teacherGradeRes, studentGradeRes] =
         await Promise.all([
           fetch(`${api_startpoint}/api/new-signups?${queryStringNewSignups}`),
@@ -550,7 +535,6 @@ export default function UserAnalyticsDashboard() {
       setLoadingPhase3(false);
     }
   };
-
   const loadAdditionalMetrics = async (filters = appliedFilters) => {
     const filterParams = buildFilterParams(filters);
     try {
@@ -775,7 +759,6 @@ export default function UserAnalyticsDashboard() {
       setTotalPointsRedeemed(0);
     }
   };
-
   // Parallel loading orchestrator
   const loadDashboardData = async () => {
     setGlobalLoading(true);
@@ -792,7 +775,6 @@ export default function UserAnalyticsDashboard() {
       setGlobalLoading(false);
     }
   };
-
   // Export all dashboard data to Excel with multiple sheets
   const exportDashboardData = async () => {
     try {
@@ -843,7 +825,7 @@ export default function UserAnalyticsDashboard() {
         { name: "Total Puzzle Completes", value: tpzcTotal || 0 },
         { name: "Total PBL Mission Completes", value: totalCountPBL || 0 },
         { name: "Total Vision Completes", value: totalVisionSubmitted || 0 },
-        { name: "Total Vision Score Earned", value: totalVisionScore || 0 },
+        { name: "Total Vision Coins Earned", value: totalVisionScore || 0 },
       ];
       summaryMetrics.forEach((metric) => {
         exportData.push({
@@ -1219,7 +1201,7 @@ export default function UserAnalyticsDashboard() {
         XLSX.utils.book_append_sheet(
           workbook,
           jigyasaPointsSheet,
-          "Jigyasa Points Over Time"
+          "Jigyasa Coins Over Time"
         );
       }
       if (Array.isArray(pointsPragyaData) && pointsPragyaData.length > 0) {
@@ -1272,13 +1254,13 @@ export default function UserAnalyticsDashboard() {
           "Pragya Coins Earned Over Time"
         );
       }
-      // Export Vision Score Over Time Data to separate sheet
+      // Export Vision Points Over Time Data to separate sheet
       if (Array.isArray(VisionScore) && VisionScore.length > 0) {
         const visionScoreSheet = XLSX.utils.json_to_sheet(VisionScore);
         XLSX.utils.book_append_sheet(
           workbook,
           visionScoreSheet,
-          "Vision Score Over Time"
+          "Vision Points Over Time"
         );
       }
       // Export Schools Demographics Distribution Over Time to separate sheet
@@ -1309,13 +1291,11 @@ export default function UserAnalyticsDashboard() {
       console.error("Error exporting data:", error);
     }
   };
-
   const [EchartData, setEChartData] = useState<EchartSignup[]>([]);
   const [grouping, setGrouping] = useState("monthly");
   const [selectedUserType, setSelectedUserType] = useState("All");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-
   const fetchCitiesForState = async (state: string) => {
     try {
       const res = await fetch(`${api_startpoint}/api/city-list`, {
@@ -1336,7 +1316,6 @@ export default function UserAnalyticsDashboard() {
       setAvailableCities(["All"]);
     }
   };
-
   useEffect(() => {
     const fetchStates = async () => {
       try {
@@ -1410,27 +1389,22 @@ export default function UserAnalyticsDashboard() {
     fetchSchoolCodes();
     fetchGrades();
   }, []);
-
   useEffect(() => {
     console.log(" [useEffect] /api/signing-user triggered");
     console.log(" appliedFilters:", JSON.parse(JSON.stringify(appliedFilters)));
     console.log(" grouping:", grouping);
     console.log(" selectedUserType:", selectedUserType);
-
     setLoading(true);
-
     // Build filter params correctly
     const filterParams = {
       grouping,
       user_type: selectedUserType,
       ...buildFilterParams(appliedFilters),
     };
-
     console.log(
       " Fetching with filterParams:",
       JSON.parse(JSON.stringify(filterParams))
     );
-
     fetch(`${api_startpoint}/api/signing-user`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -1447,26 +1421,22 @@ export default function UserAnalyticsDashboard() {
       })
       .then((data) => {
         console.log(" [fetch] raw data:", JSON.parse(JSON.stringify(data)));
-
         // Handle both array and object response formats
         const dataArray = Array.isArray(data)
           ? data
           : Array.isArray(data?.data)
           ? data.data
           : [];
-
         console.log(
           " [fetch] normalised array:",
           JSON.parse(JSON.stringify(dataArray))
         );
-
         if (!Array.isArray(dataArray) || dataArray.length === 0) {
-          console.warn(" [fetch] empty or invalid array – clearing chart");
+          console.warn(" [fetch] empty or invalid array â €   clearing chart");
           setEChartData([]);
           setLoading(false);
           return;
         }
-
         // Transform data for chart
         const grouped: Record<string, EchartSignup> = {};
         (dataArray as ApiSignupData[]).forEach((r) => {
@@ -1474,7 +1444,6 @@ export default function UserAnalyticsDashboard() {
           if (!grouped[period]) grouped[period] = { period };
           grouped[period][r.user_type] = r.count;
         });
-
         const final = Object.values(grouped);
         console.log(
           " [fetch] final chart data:",
@@ -1490,9 +1459,6 @@ export default function UserAnalyticsDashboard() {
         setLoading(false);
       });
   }, [grouping, selectedUserType, appliedFilters]); // Ensure all dependencies are listed
-
-
-
   const allSeries = [
     {
       name: "Admin",
@@ -1590,7 +1556,13 @@ export default function UserAnalyticsDashboard() {
       ),
       boundaryGap: grouping === "lifetime" ? true : false,
       axisLabel: {
-        rotate: grouping === "daily" ? 45 : 0,
+        rotate: grouping === "daily" ? 45 : 30,
+        formatter: (value: string) => formatWeeklyXAxisLabel(value, grouping),
+        rich: {
+          a: { fontWeight: 'bold', fontSize: 11, lineHeight: 16 },
+          b: { fontSize: 10, color: '#666', lineHeight: 14 },
+        },
+        margin: 20,
       },
     },
     yAxis: {
@@ -1618,11 +1590,9 @@ export default function UserAnalyticsDashboard() {
   const [mounted, setMounted] = useState(false);
   const [chartData, setChartData] = useState<SignupData[]>([]);
   const [selectedYear, setSelectedYear] = useState<string>("");
-
   useEffect(() => {
     setMounted(true);
   }, []);
-
   useEffect(() => {
     async function fetchData() {
       try {
@@ -1655,7 +1625,6 @@ export default function UserAnalyticsDashboard() {
     }
     fetchData();
   }, [appliedFilters]);
-
   const filteredData = selectedYear
     ? chartData.filter(
         (item) => item.month && item.month.startsWith(selectedYear)
@@ -1678,16 +1647,13 @@ export default function UserAnalyticsDashboard() {
   const [schoolCount, setSchoolCount] = useState<number>(0);
   const [totalTeachers, setTotalTeachers] = useState<number>(0);
   const [totalStudents, setTotalStudents] = useState<number>(0);
-
   // Load dashboard data only when appliedFilters change
   useEffect(() => {
     loadDashboardData();
   }, [appliedFilters]);
-
   const [couponRedeemCount, setCouponRedeemCount] = useState<
     Array<{ amount: string; coupon_count: number }>
   >([]);
-
   useEffect(() => {
     async function fetchCouponRedeemCount() {
       try {
@@ -1709,7 +1675,6 @@ export default function UserAnalyticsDashboard() {
     }
     fetchCouponRedeemCount();
   }, [appliedFilters]);
-
   const pieChartData = {
     labels: (couponRedeemCount || []).map((item) => item.amount),
     datasets: [
@@ -1742,35 +1707,38 @@ export default function UserAnalyticsDashboard() {
     animation: { animateScale: true },
   };
   const [assignCounts, setAssignCounts] = useState<number[]>([]);
-  
   const [teacherAssignCounts, setTeacherAssignCounts] = useState<number[]>([]);
   const [teacherAssignChartData, setTeacherAssignChartData] = useState<{ assignmentCount: number; teacherCount: number }[]>([]);
-
-
+    // Local time filter for Teacher Assignments ONLY
+  const [teacherAssignDateRange, setTeacherAssignDateRange] = useState<string>('lifetime');
+  const [teacherAssignStartDate, setTeacherAssignStartDate] = useState<string>('');
+  const [teacherAssignEndDate, setTeacherAssignEndDate] = useState<string>('');
   useEffect(() => {
     async function fetchTeacherAssignCounts() {
       try {
+        // Start with global filters
+        const filterParams = buildFilterParams(appliedFilters);
+        // Override date filters with LOCAL ones for this chart only
+        if (teacherAssignDateRange === 'custom') {
+          filterParams.start_date = teacherAssignStartDate;
+          filterParams.end_date = teacherAssignEndDate;
+        } else {
+          filterParams.date_range = teacherAssignDateRange;
+        }
         const res = await fetch(`${api_startpoint}/api/teacher-assign-count`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(buildFilterParams(appliedFilters)),
+          body: JSON.stringify(filterParams),
         });
         const data = await res.json();
         if (Array.isArray(data)) {
-          // Extract raw assign_count values
           const counts = data.map((item: { assign_count: number }) => item.assign_count);
           setTeacherAssignCounts(counts);
-
-          // Build frequency map: assignmentCount => number of teachers
           const freqMap: Record<number, number> = {};
           counts.forEach((count) => {
             freqMap[count] = (freqMap[count] || 0) + 1;
           });
-
-          // Determine max assignment count
           const maxCount = Math.max(...counts, 0);
-
-          // Generate complete series from 1 to maxCount (including zeros)
           const chartData = [];
           for (let i = 1; i <= maxCount; i++) {
             chartData.push({
@@ -1778,7 +1746,6 @@ export default function UserAnalyticsDashboard() {
               teacherCount: freqMap[i] || 0,
             });
           }
-
           setTeacherAssignChartData(chartData);
         } else {
           setTeacherAssignChartData([]);
@@ -1789,8 +1756,12 @@ export default function UserAnalyticsDashboard() {
       }
     }
     fetchTeacherAssignCounts();
-  }, [appliedFilters]);
-
+  }, [
+    appliedFilters,
+    teacherAssignDateRange,
+    teacherAssignStartDate,
+    teacherAssignEndDate
+  ]);
   const bins = [0, 5, 10, 15, 20, 25];
   const binLabels = ["1-5", "6-10", "11-15", "16-20", "21-25", "26+"];
   const binData = Array(binLabels.length).fill(0);
@@ -1802,7 +1773,6 @@ export default function UserAnalyticsDashboard() {
     else if (count <= 25) binData[4]++;
     else binData[5]++;
   });
-
   const teacherAssignData = {
     labels: teacherAssignChartData.map(item => item.assignmentCount.toString()),
     datasets: [
@@ -1814,7 +1784,6 @@ export default function UserAnalyticsDashboard() {
       },
     ],
   };
-
   const teacherAssignOptions = {
   responsive: true,
   maintainAspectRatio: false,
@@ -1847,7 +1816,6 @@ export default function UserAnalyticsDashboard() {
     },
   },
 } satisfies ChartOptions<'bar'>;
-  
   const CustomTooltip: React.FC<TooltipProps<number, string>> = ({
     active,
     payload,
@@ -1868,7 +1836,6 @@ export default function UserAnalyticsDashboard() {
   const [stateCounts, setStateCounts] = useState<
     Array<{ state: string; count_state: number }>
   >([]);
-
   useEffect(() => {
     async function fetchSchoolStateCounts() {
       try {
@@ -1895,7 +1862,6 @@ export default function UserAnalyticsDashboard() {
     }
     fetchSchoolStateCounts();
   }, [appliedFilters]);
-
   const schoolStateData = {
     labels: (stateCounts || []).map((item) => item.state),
     datasets: [
@@ -1938,7 +1904,6 @@ export default function UserAnalyticsDashboard() {
     },
   };
   const [userTypeData, setUserTypeData] = useState<userTypeChart[]>([]);
-
   useEffect(() => {
     async function fetchUserType() {
       try {
@@ -1960,7 +1925,6 @@ export default function UserAnalyticsDashboard() {
     }
     fetchUserType();
   }, [appliedFilters]);
-
   const deepBlueColors = [
     "#1E3A8A",
     "#3B82F6",
@@ -2031,7 +1995,6 @@ export default function UserAnalyticsDashboard() {
   const [groupingGrade, setGroupingGrade] = useState("monthly");
   const [loadingGrade, setLoadingGrade] = useState(true);
   const [errorGrade, setErrorGrade] = useState<string | null>(null);
-
   const fetchDataGrade = (selectedGrouping: string) => {
     setLoadingGrade(true);
     fetch(`${api_startpoint}/api/students-by-grade-over-time`, {
@@ -2068,11 +2031,9 @@ export default function UserAnalyticsDashboard() {
         setLoadingGrade(false);
       });
   };
-
   useEffect(() => {
     fetchDataGrade(groupingGrade);
   }, [groupingGrade, appliedFilters]);
-
   const uniqueGrades = Array.from(
     new Set(
       Array.isArray(EchartDataGrade)
@@ -2155,7 +2116,13 @@ export default function UserAnalyticsDashboard() {
       ),
       boundaryGap: groupingGrade === "lifetime" ? true : false,
       axisLabel: {
-        rotate: groupingGrade === "daily" ? 45 : 0,
+        rotate: groupingGrade === "daily" ? 45 : 30,
+        formatter: (value: string) => formatWeeklyXAxisLabel(value, groupingGrade),
+        rich: {
+          a: { fontWeight: 'bold', fontSize: 11, lineHeight: 16 },
+          b: { fontSize: 10, color: '#666', lineHeight: 14 },
+        },
+        margin: 20,
       },
     },
     yAxis: {
@@ -2175,7 +2142,6 @@ export default function UserAnalyticsDashboard() {
   const [errorTeacherGrade, setErrorTeacherGrade] = useState<string | null>(
     null
   );
-
   const fetchDataTeacherGrade = (selectedGrouping: string) => {
     setLoadingTeacherGrade(true);
     fetch(`${api_startpoint}/api/teachers-by-grade-over-time`, {
@@ -2214,11 +2180,9 @@ export default function UserAnalyticsDashboard() {
         setLoadingTeacherGrade(false);
       });
   };
-
   useEffect(() => {
     fetchDataTeacherGrade(groupingTeacherGrade);
   }, [groupingTeacherGrade, appliedFilters]);
-
   const uniqueGradesTeacher = Array.from(
     new Set(
       Array.isArray(EchartDataTeacherGrade)
@@ -2301,7 +2265,13 @@ export default function UserAnalyticsDashboard() {
       ),
       boundaryGap: groupingTeacherGrade === "lifetime" ? true : false,
       axisLabel: {
-        rotate: groupingTeacherGrade === "daily" ? 45 : 0,
+        rotate: groupingTeacherGrade === "daily" ? 45 : 30,
+        formatter: (value: string) => formatWeeklyXAxisLabel(value, groupingTeacherGrade),
+        rich: {
+          a: { fontWeight: 'bold', fontSize: 11, lineHeight: 16 },
+          b: { fontSize: 10, color: '#666', lineHeight: 14 },
+        },
+        margin: 20,
       },
     },
     yAxis: {
@@ -2316,7 +2286,6 @@ export default function UserAnalyticsDashboard() {
   const [chartStudentsData, setChartStudentsData] = useState<
     DemographChartdata[]
   >([]);
-
   useEffect(() => {
     async function fetchStateData() {
       try {
@@ -2386,7 +2355,6 @@ export default function UserAnalyticsDashboard() {
     }
     fetchStateData();
   }, [appliedFilters]);
-
   const chartOptions = {
     tooltip: {
       trigger: "axis",
@@ -2435,7 +2403,6 @@ export default function UserAnalyticsDashboard() {
     DemographChartdata[]
   >([]);
   const [geoData, setGeoData] = useState<DemographData[]>([]);
-
   useEffect(() => {
     async function fetchTeacherData() {
       try {
@@ -2508,7 +2475,6 @@ export default function UserAnalyticsDashboard() {
     }
     fetchTeacherData();
   }, [appliedFilters]);
-
   const teacherDemographicOptions = {
     tooltip: {
       trigger: "axis",
@@ -2584,11 +2550,9 @@ export default function UserAnalyticsDashboard() {
         setSessions([]);
       });
   };
-
   useEffect(() => {
     fetchSessions();
   }, []);
-
   const genderPieOption = {
     title: {
       left: "center",
@@ -2640,7 +2604,6 @@ export default function UserAnalyticsDashboard() {
     { value: "rejected", label: "Rejected" },
     { value: "approved", label: "Approved" },
   ];
-
   useEffect(() => {
     const fetchMissionData = async () => {
       setMissionLoading(true);
@@ -2672,7 +2635,6 @@ export default function UserAnalyticsDashboard() {
     };
     fetchMissionData();
   }, [missionGrouping, missionStatus, selectedMissionSubject, appliedFilters]);
-
   const getParsedField = (raw: any): string => {
     if (typeof raw === "object" && raw !== null) {
       return raw.en || "";
@@ -2734,7 +2696,13 @@ export default function UserAnalyticsDashboard() {
       data: periods,
       boundaryGap: true,
       axisLabel: {
-        rotate: missionGrouping === "daily" ? 45 : 0,
+        rotate: missionGrouping === "daily" ? 45 : 30,
+        formatter: (value: string) => formatWeeklyXAxisLabel(value, missionGrouping),
+        rich: {
+          a: { fontWeight: 'bold', fontSize: 11, lineHeight: 16 },
+          b: { fontSize: 10, color: '#666', lineHeight: 14 },
+        },
+        margin: 20,
       },
     },
     yAxis: {
@@ -2873,6 +2841,15 @@ export default function UserAnalyticsDashboard() {
         formatPeriod(p, missionGrouping)
       ),
       boundaryGap: true,
+      axisLabel: {
+        rotate: missionGrouping === "daily" ? 45 : 30,
+        formatter: (value: string) => formatWeeklyXAxisLabel(value, missionGrouping),
+        rich: {
+          a: { fontWeight: 'bold', fontSize: 11, lineHeight: 16 },
+          b: { fontSize: 10, color: '#666', lineHeight: 14 },
+        },
+        margin: 20,
+      },
     },
     yAxis: {
       type: "value",
@@ -2889,7 +2866,6 @@ export default function UserAnalyticsDashboard() {
   const [jigyasaStatus, setJigyasaStatus] = useState<string>("all");
   const [selectedJigyasaSubject, setSelectedJigyasaSubject] =
     useState<string>("all");
-
   useEffect(() => {
     const fetchJigyasaData = async () => {
       setJigyasaLoading(true);
@@ -2921,7 +2897,6 @@ export default function UserAnalyticsDashboard() {
     };
     fetchJigyasaData();
   }, [jigyasaGrouping, jigyasaStatus, selectedJigyasaSubject, appliedFilters]);
-
   const groupedByPeriodJigyasa: Record<string, Record<string, number>> = {};
   jigyasaData.forEach((item) => {
     const period = item.period;
@@ -2968,7 +2943,13 @@ export default function UserAnalyticsDashboard() {
       data: periodsJigyasa,
       boundaryGap: true,
       axisLabel: {
-        rotate: jigyasaGrouping === "daily" ? 45 : 0,
+        rotate: jigyasaGrouping === "daily" ? 45 : 30,
+        formatter: (value: string) => formatWeeklyXAxisLabel(value, jigyasaGrouping),
+        rich: {
+          a: { fontWeight: 'bold', fontSize: 11, lineHeight: 16 },
+          b: { fontSize: 10, color: '#666', lineHeight: 14 },
+        },
+        margin: 20,
       },
     },
     yAxis: {
@@ -3088,6 +3069,15 @@ export default function UserAnalyticsDashboard() {
         formatPeriod(p, jigyasaGrouping)
       ),
       boundaryGap: true,
+      axisLabel: {
+        rotate: jigyasaGrouping === "daily" ? 45 : 30,
+        formatter: (value: string) => formatWeeklyXAxisLabel(value, jigyasaGrouping),
+        rich: {
+          a: { fontWeight: 'bold', fontSize: 11, lineHeight: 16 },
+          b: { fontSize: 10, color: '#666', lineHeight: 14 },
+        },
+        margin: 20,
+      },
     },
     yAxis: {
       type: "value",
@@ -3104,7 +3094,6 @@ export default function UserAnalyticsDashboard() {
   const [pragyaStatus, setPragyaStatus] = useState<string>("all");
   const [selectedPragyaSubject, setSelectedPragyaSubject] =
     useState<string>("all");
-
   useEffect(() => {
     const fetchPragyaData = async () => {
       setPragyaLoading(true);
@@ -3134,7 +3123,6 @@ export default function UserAnalyticsDashboard() {
     };
     fetchPragyaData();
   }, [pragyaGrouping, pragyaStatus, selectedPragyaSubject, appliedFilters]);
-
   const groupedByPeriodPragya: Record<string, Record<string, number>> = {};
   pragyaData.forEach((item) => {
     const period = item.period;
@@ -3181,7 +3169,13 @@ export default function UserAnalyticsDashboard() {
       data: periodsPragya,
       boundaryGap: true,
       axisLabel: {
-        rotate: pragyaGrouping === "daily" ? 45 : 0,
+        rotate: pragyaGrouping === "daily" ? 45 : 30,
+        formatter: (value: string) => formatWeeklyXAxisLabel(value, pragyaGrouping),
+        rich: {
+          a: { fontWeight: 'bold', fontSize: 11, lineHeight: 16 },
+          b: { fontSize: 10, color: '#666', lineHeight: 14 },
+        },
+        margin: 20,
       },
     },
     yAxis: {
@@ -3301,6 +3295,15 @@ export default function UserAnalyticsDashboard() {
         formatPeriod(p, pragyaGrouping)
       ),
       boundaryGap: true,
+      axisLabel: {
+        rotate: pragyaGrouping === "daily" ? 45 : 30,
+        formatter: (value: string) => formatWeeklyXAxisLabel(value, pragyaGrouping),
+        rich: {
+          a: { fontWeight: 'bold', fontSize: 11, lineHeight: 16 },
+          b: { fontSize: 10, color: '#666', lineHeight: 14 },
+        },
+        margin: 20,
+      },
     },
     yAxis: {
       type: "value",
@@ -3332,7 +3335,6 @@ export default function UserAnalyticsDashboard() {
   const [quizSubjects, setQuizSubjects] = useState<
     Array<{ id: number; title: string }>
   >([]);
-
   useEffect(() => {
     const fetchSubjects = async () => {
       try {
@@ -3356,7 +3358,6 @@ export default function UserAnalyticsDashboard() {
     };
     fetchSubjects();
   }, []);
-
   useEffect(() => {
     const fetchQuizData = async () => {
       setQuizLoading(true);
@@ -3385,7 +3386,6 @@ export default function UserAnalyticsDashboard() {
     };
     fetchQuizData();
   }, [quizGrouping, selectedQuizSubject, appliedFilters]);
-
   const groupedByPeriodQuiz: Record<string, Record<string, number>> = {};
   quizData.forEach((item) => {
     const period = item.period;
@@ -3430,7 +3430,13 @@ export default function UserAnalyticsDashboard() {
       data: periodsQuiz,
       boundaryGap: true,
       axisLabel: {
-        rotate: quizGrouping === "daily" ? 45 : 0,
+        rotate: quizGrouping === "daily" ? 45 : 30,
+        formatter: (value: string) => formatWeeklyXAxisLabel(value, quizGrouping),
+        rich: {
+          a: { fontWeight: 'bold', fontSize: 11, lineHeight: 16 },
+          b: { fontSize: 10, color: '#666', lineHeight: 14 },
+        },
+        margin: 20,
       },
     },
     yAxis: {
@@ -3544,6 +3550,15 @@ export default function UserAnalyticsDashboard() {
       type: "category",
       data: periodsQuizTransformed.map((p) => formatPeriod(p, quizGrouping)),
       boundaryGap: true,
+      axisLabel: {
+        rotate: quizGrouping === "daily" ? 45 : 30,
+        formatter: (value: string) => formatWeeklyXAxisLabel(value, quizGrouping),
+        rich: {
+          a: { fontWeight: 'bold', fontSize: 11, lineHeight: 16 },
+          b: { fontSize: 10, color: '#666', lineHeight: 14 },
+        },
+        margin: 20,
+      },
     },
     yAxis: {
       type: "value",
@@ -3562,7 +3577,6 @@ export default function UserAnalyticsDashboard() {
   >([]);
   const [pointsMissionLoading, setPointsMissionLoading] =
     useState<boolean>(true);
-
   useEffect(() => {
     const fetchPoints = async () => {
       setPointsMissionLoading(true);
@@ -3589,7 +3603,6 @@ export default function UserAnalyticsDashboard() {
     };
     fetchPoints();
   }, [pointsMissionGrouping, appliedFilters]); //  add appliedFilters
-
   const pointsMissionCoinSeries = {
     name: "Points",
     type: "bar" as const,
@@ -3616,7 +3629,7 @@ export default function UserAnalyticsDashboard() {
     z: -1,
   };
   const pointsMissionChartOption = {
-    title: { text: "Mission Points Over Time", left: "center" },
+    title: { text: "Mission Coins Over Time", left: "center" },
     tooltip: {
       trigger: "axis",
       axisPointer: { type: "shadow" },
@@ -3628,7 +3641,13 @@ export default function UserAnalyticsDashboard() {
       ),
       boundaryGap: true,
       axisLabel: {
-        rotate: pointsMissionGrouping === "daily" ? 45 : 0,
+        rotate: pointsMissionGrouping === "daily" ? 45 : 30,
+        formatter: (value: string) => formatWeeklyXAxisLabel(value, pointsMissionGrouping),
+        rich: {
+          a: { fontWeight: 'bold', fontSize: 11, lineHeight: 16 },
+          b: { fontSize: 10, color: '#666', lineHeight: 14 },
+        },
+        margin: 20,
       },
     },
     yAxis: {
@@ -3654,7 +3673,6 @@ export default function UserAnalyticsDashboard() {
     { period: string; points: number }[]
   >([]);
   const [pointsQuizLoading, setPointsQuizLoading] = useState<boolean>(true);
-
   useEffect(() => {
     const fetchPoints = async () => {
       setPointsQuizLoading(true);
@@ -3669,7 +3687,7 @@ export default function UserAnalyticsDashboard() {
         const json = await res.json();
         setPointsQuizData(Array.isArray(json.data) ? json.data : []);
       } catch (err) {
-        console.error("Error loading quiz points data", err);
+        console.error("Error loading quiz coins data", err);
         setPointsQuizData([]);
       } finally {
         setPointsQuizLoading(false);
@@ -3677,7 +3695,6 @@ export default function UserAnalyticsDashboard() {
     };
     fetchPoints();
   }, [pointsQuizGrouping, appliedFilters]);
-
   const pointsQuizCoinSeries = {
     name: "Points",
     type: "bar" as const,
@@ -3703,7 +3720,7 @@ export default function UserAnalyticsDashboard() {
     z: -1,
   };
   const pointsQuizChartOption = {
-    title: { text: "Quiz Points Over Time", left: "center" },
+    title: { text: "Quiz Coins Over Time", left: "center" },
     tooltip: {
       trigger: "axis",
       axisPointer: { type: "shadow" },
@@ -3715,7 +3732,13 @@ export default function UserAnalyticsDashboard() {
       ),
       boundaryGap: true,
       axisLabel: {
-        rotate: pointsQuizGrouping === "daily" ? 45 : 0,
+        rotate: pointsQuizGrouping === "daily" ? 45 : 30,
+        formatter: (value: string) => formatWeeklyXAxisLabel(value, pointsQuizGrouping),
+        rich: {
+          a: { fontWeight: 'bold', fontSize: 11, lineHeight: 16 },
+          b: { fontSize: 10, color: '#666', lineHeight: 14 },
+        },
+        margin: 20,
       },
     },
     yAxis: {
@@ -3742,7 +3765,6 @@ export default function UserAnalyticsDashboard() {
   >([]);
   const [pointsJigyasaLoading, setPointsJigyasaLoading] =
     useState<boolean>(true);
-
   useEffect(() => {
     const fetchPoints = async () => {
       setPointsJigyasaLoading(true);
@@ -3768,7 +3790,6 @@ export default function UserAnalyticsDashboard() {
     };
     fetchPoints();
   }, [pointsJigyasaGrouping, appliedFilters]);
-
   const pointsJigyasaCoinSeries = {
     name: "Points",
     type: "bar" as const,
@@ -3795,7 +3816,7 @@ export default function UserAnalyticsDashboard() {
     z: -1,
   };
   const pointsJigyasaChartOption = {
-    title: { text: "Jigyasa Points Over Time", left: "center" },
+    title: { text: "Jigyasa Coins Over Time", left: "center" },
     tooltip: {
       trigger: "axis",
       axisPointer: { type: "shadow" },
@@ -3807,7 +3828,13 @@ export default function UserAnalyticsDashboard() {
       ),
       boundaryGap: true,
       axisLabel: {
-        rotate: pointsJigyasaGrouping === "daily" ? 45 : 0,
+        rotate: pointsJigyasaGrouping === "daily" ? 45 : 30,
+        formatter: (value: string) => formatWeeklyXAxisLabel(value, pointsJigyasaGrouping),
+        rich: {
+          a: { fontWeight: 'bold', fontSize: 11, lineHeight: 16 },
+          b: { fontSize: 10, color: '#666', lineHeight: 14 },
+        },
+        margin: 20,
       },
     },
     yAxis: {
@@ -3833,7 +3860,6 @@ export default function UserAnalyticsDashboard() {
     { period: string; points: number }[]
   >([]);
   const [pointsPragyaLoading, setPointsPragyaLoading] = useState<boolean>(true);
-
   useEffect(() => {
     const fetchPoints = async () => {
       setPointsPragyaLoading(true);
@@ -3859,7 +3885,6 @@ export default function UserAnalyticsDashboard() {
     };
     fetchPoints();
   }, [pointsPragyaGrouping, appliedFilters]);
-
   const pointsPragyaCoinSeries = {
     name: "Points",
     type: "bar" as const,
@@ -3886,7 +3911,7 @@ export default function UserAnalyticsDashboard() {
     z: -1,
   };
   const pointsPragyaChartOption = {
-    title: { text: "Pragya Points Over Time", left: "center" },
+    title: { text: "Pragya Coins Over Time", left: "center" },
     tooltip: {
       trigger: "axis",
       axisPointer: { type: "shadow" },
@@ -3898,7 +3923,13 @@ export default function UserAnalyticsDashboard() {
       ),
       boundaryGap: true,
       axisLabel: {
-        rotate: pointsPragyaGrouping === "daily" ? 45 : 0,
+        rotate: pointsPragyaGrouping === "daily" ? 45 : 30,
+        formatter: (value: string) => formatWeeklyXAxisLabel(value, pointsPragyaGrouping),
+        rich: {
+          a: { fontWeight: 'bold', fontSize: 11, lineHeight: 16 },
+          b: { fontSize: 10, color: '#666', lineHeight: 14 },
+        },
+        margin: 20,
       },
     },
     yAxis: {
@@ -3925,7 +3956,6 @@ export default function UserAnalyticsDashboard() {
   >([]);
   const [couponRedeemsLoading, setCouponRedeemsLoading] =
     useState<boolean>(true);
-
   useEffect(() => {
     setCouponRedeemsLoading(true);
     fetch(`${api_startpoint}/api/coupon-redeems-over-time`, {
@@ -3941,7 +3971,6 @@ export default function UserAnalyticsDashboard() {
       .catch(console.error)
       .finally(() => setCouponRedeemsLoading(false));
   }, [couponRedeemsGrouping, appliedFilters]);
-
   const CouponRedeemsSeries = {
     name: "Coins",
     type: "bar" as const,
@@ -3974,7 +4003,15 @@ export default function UserAnalyticsDashboard() {
       data: couponRedeemsData.map((d) =>
         formatPeriod(d.period, couponRedeemsGrouping)
       ),
-      axisLabel: { rotate: couponRedeemsGrouping === "daily" ? 45 : 0 },
+      axisLabel: { 
+        rotate: couponRedeemsGrouping === "daily" ? 45 : 30,
+        formatter: (value: string) => formatWeeklyXAxisLabel(value, couponRedeemsGrouping),
+        rich: {
+          a: { fontWeight: 'bold', fontSize: 11, lineHeight: 16 },
+          b: { fontSize: 10, color: '#666', lineHeight: 14 },
+        },
+        margin: 20,
+      },
     },
     yAxis: { type: "value", name: "Coins" },
     dataZoom: [
@@ -3987,19 +4024,16 @@ export default function UserAnalyticsDashboard() {
   const [studentData, setStudentData] = useState<any[]>([]);
   const [studentLoading, setStudentLoading] = useState<boolean>(true);
   const [allStates, setAllStates] = useState<string[]>([]);
-
   useEffect(() => {
     fetch(`${api_startpoint}/api/get-all-states`)
       .then((r) => r.json())
       .then((json) => setAllStates(Array.isArray(json.states) ? json.states || [] : []))
       .catch(console.error);
   }, []);
-
   const [selectedState, setSelectedState] = useState<string>("");
   const handleStateChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     setSelectedState(e.target.value);
   };
-
   useEffect(() => {
     const fetchStudentData = async () => {
       setStudentLoading(true);
@@ -4027,7 +4061,6 @@ export default function UserAnalyticsDashboard() {
     };
     fetchStudentData();
   }, [studentGrouping, selectedState, appliedFilters]);
-
   const groupedByPeriodStudent: Record<string, Record<string, number>> = {};
   studentData.forEach((item) => {
     const period = item.period;
@@ -4122,7 +4155,13 @@ export default function UserAnalyticsDashboard() {
       type: "category",
       data: periodsStudent.map((p) => formatPeriod(p, studentGrouping)),
       axisLabel: {
-        rotate: studentGrouping === "daily" ? 45 : 0,
+        rotate: studentGrouping === "daily" ? 45 : 30,
+        formatter: (value: string) => formatWeeklyXAxisLabel(value, studentGrouping),
+        rich: {
+          a: { fontWeight: 'bold', fontSize: 11, lineHeight: 16 },
+          b: { fontSize: 10, color: '#666', lineHeight: 14 },
+        },
+        margin: 20,
       },
     },
     yAxis: {
@@ -4138,7 +4177,6 @@ export default function UserAnalyticsDashboard() {
   const [teacherData, setTeacherData] = useState<any[]>([]);
   const [teacherLoading, setTeacherLoading] = useState<boolean>(true);
   const [selectedTeacherState, setSelectedTeacherState] = useState<string>("");
-
   useEffect(() => {
     const fetchTeacherData = async () => {
       setTeacherLoading(true);
@@ -4166,7 +4204,6 @@ export default function UserAnalyticsDashboard() {
     };
     fetchTeacherData();
   }, [teacherGrouping, selectedTeacherState, appliedFilters]);
-
   const groupedByPeriodTeacher: Record<string, Record<string, number>> = {};
   teacherData.forEach((item) => {
     const period = item.period;
@@ -4246,7 +4283,13 @@ export default function UserAnalyticsDashboard() {
       type: "category",
       data: periodsTeacher.map((p) => formatPeriod(p, teacherGrouping)),
       axisLabel: {
-        rotate: teacherGrouping === "daily" ? 45 : 0,
+        rotate: teacherGrouping === "daily" ? 45 : 30,
+        formatter: (value: string) => formatWeeklyXAxisLabel(value, teacherGrouping),
+        rich: {
+          a: { fontWeight: 'bold', fontSize: 11, lineHeight: 16 },
+          b: { fontSize: 10, color: '#666', lineHeight: 14 },
+        },
+        margin: 20,
       },
     },
     yAxis: {
@@ -4262,7 +4305,6 @@ export default function UserAnalyticsDashboard() {
   const [schoolData, setSchoolData] = useState<any[]>([]);
   const [schoolLoading, setSchoolLoading] = useState<boolean>(true);
   const [selectedSchoolState, setSelectedSchoolState] = useState<string>("");
-
   useEffect(() => {
     const fetchSchoolData = async () => {
       setSchoolLoading(true);
@@ -4290,7 +4332,6 @@ export default function UserAnalyticsDashboard() {
     };
     fetchSchoolData();
   }, [schoolGrouping, selectedSchoolState, appliedFilters]);
-
   const groupedByPeriodSchool: Record<string, Record<string, number>> = {};
   schoolData.forEach((item) => {
     const period = item.period;
@@ -4360,7 +4401,13 @@ export default function UserAnalyticsDashboard() {
       type: "category",
       data: periodsSchool.map((p) => formatPeriod(p, schoolGrouping)),
       axisLabel: {
-        rotate: schoolGrouping === "daily" ? 45 : 0,
+        rotate: schoolGrouping === "daily" ? 45 : 30,
+        formatter: (value: string) => formatWeeklyXAxisLabel(value, schoolGrouping),
+        rich: {
+          a: { fontWeight: 'bold', fontSize: 11, lineHeight: 16 },
+          b: { fontSize: 10, color: '#666', lineHeight: 14 },
+        },
+        margin: 20,
       },
     },
     yAxis: {
@@ -4406,7 +4453,6 @@ export default function UserAnalyticsDashboard() {
   const allLevels: Level[] = ["level1", "level2", "level3", "level4"];
   const levelsToFetch: Level[] =
     selectedLevel === "all" ? allLevels : [selectedLevel];
-
   useEffect(() => {
     setLoadingLevel(true);
     fetch(`${api_startpoint}/api/student-count-by-level-over-time`, {
@@ -4431,7 +4477,6 @@ export default function UserAnalyticsDashboard() {
       .catch(console.error)
       .finally(() => setLoadingLevel(false));
   }, [groupingLevel, selectedLevel, appliedFilters]);
-
   const levelColors: Record<Level, string> = {
     level1: "#1E3A8A",
     level2: "#3B82F6",
@@ -4441,7 +4486,7 @@ export default function UserAnalyticsDashboard() {
   const seriesData = levelsToFetch.map((level) => ({
     name:
       level === "level1"
-        ? "Level 1: Grade 1 – 5"
+        ? "Level 1: Grade 1 â €   5"
         : level === "level2"
         ? "Level 2: Grade 6+"
         : level === "level3"
@@ -4503,7 +4548,15 @@ export default function UserAnalyticsDashboard() {
       type: "category",
       data: EchartDataLevel.map((item) => item.period),
       boundaryGap: groupingLevel === "lifetime" ? true : false,
-      axisLabel: { rotate: groupingLevel === "daily" ? 45 : 0 },
+      axisLabel: { 
+        rotate: groupingLevel === "daily" ? 45 : 30,
+        formatter: (value: string) => formatWeeklyXAxisLabel(value, groupingLevel),
+        rich: {
+          a: { fontWeight: 'bold', fontSize: 11, lineHeight: 16 },
+          b: { fontSize: 10, color: '#666', lineHeight: 14 },
+        },
+        margin: 20,
+      },
     },
     yAxis: {
       type: "value",
@@ -4519,7 +4572,6 @@ export default function UserAnalyticsDashboard() {
   const [loadingGender, setLoadingGender] = useState(true);
   const [errorGender, setErrorGender] = useState<string | null>(null);
   const [selectedUserTypeGender, setSelectedUserTypeGender] = useState("All");
-
   const fetchDataGender = (
     selectedGrouping: string,
     selectedUserTypeGender: string
@@ -4530,7 +4582,6 @@ export default function UserAnalyticsDashboard() {
       user_type: selectedUserTypeGender,
       ...buildFilterParams(appliedFilters),
     };
-
     fetch(`${api_startpoint}/api/signing-user-gender`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -4565,11 +4616,9 @@ export default function UserAnalyticsDashboard() {
         setEchartDataGender([]);
       });
   };
-
   useEffect(() => {
     fetchDataGender(groupingGender, selectedUserTypeGender);
   }, [groupingGender, selectedUserTypeGender, appliedFilters]);
-
   const periodsGender = EchartDataGender.map((item) => item.period);
   const totalCountsGender = EchartDataGender.map(
     (item) =>
@@ -4621,7 +4670,13 @@ export default function UserAnalyticsDashboard() {
       data: EchartDataGender.map((item) => item.period),
       boundaryGap: groupingGender === "lifetime" ? true : false,
       axisLabel: {
-        rotate: groupingGender === "daily" ? 45 : 0,
+        rotate: groupingGender === "daily" ? 45 : 30,
+        formatter: (value: string) => formatWeeklyXAxisLabel(value, groupingGender),
+        rich: {
+          a: { fontWeight: 'bold', fontSize: 11, lineHeight: 16 },
+          b: { fontSize: 10, color: '#666', lineHeight: 14 },
+        },
+        margin: 20,
       },
     },
     yAxis: {
@@ -4676,7 +4731,6 @@ export default function UserAnalyticsDashboard() {
   const chartRef18 = useRef<ReactECharts | null>(null);
   const chartRef19 = useRef<ReactECharts | null>(null);
   const chartRef20 = useRef<ReactECharts | null>(null);
-
   const handleDownloadChart = (
     chartRef: React.RefObject<ReactECharts | null>,
     filename: string
@@ -4694,7 +4748,6 @@ export default function UserAnalyticsDashboard() {
       link.click();
     }
   };
-
   const PBLgroupings = [
     "daily",
     "weekly",
@@ -4712,7 +4765,6 @@ export default function UserAnalyticsDashboard() {
   const [statusPBL, setStatusPBL] = useState<string>("all");
   const [dataPBL, setDataPBL] = useState<PBLSubmissionData[]>([]);
   const [loadingPBL, setLoadingPBL] = useState<boolean>(true);
-
   useEffect(() => {
     setLoadingPBL(true);
     const filterParams = buildFilterParams(appliedFilters);
@@ -4743,6 +4795,15 @@ export default function UserAnalyticsDashboard() {
     xAxis: {
       type: "category",
       data: dataPBL.map((p) => formatPeriod(p.period, groupingPBL)),
+      axisLabel: {
+        rotate: groupingPBL === "daily" ? 45 : 30,
+        formatter: (value: string) => formatWeeklyXAxisLabel(value, groupingPBL),
+        rich: {
+          a: { fontWeight: 'bold', fontSize: 11, lineHeight: 16 },
+          b: { fontSize: 10, color: '#666', lineHeight: 14 },
+        },
+        margin: 20,
+      },
     },
     yAxis: {
       type: "value",
@@ -4790,7 +4851,6 @@ export default function UserAnalyticsDashboard() {
     "all"
   );
   const [visionLoading, setVisionLoading] = useState(false);
-
   useEffect(() => {
     fetch(`${api_startpoint}/api/subjects_list`, {
       method: "POST",
@@ -4800,7 +4860,6 @@ export default function UserAnalyticsDashboard() {
       .then((res) => res.json())
       .then((data) => setSubjectList(Array.isArray(data) ? data : []));
   }, []);
-
   useEffect(() => {
     setVisionLoading(true);
     const requestBody = {
@@ -4826,7 +4885,6 @@ export default function UserAnalyticsDashboard() {
         setStatsVision([]);
       });
   }, [groupingVision, subjectId, assignedBy, visionStatus, appliedFilters]);
-
   const periodsVision = (statsVision || []).map((d) => d.period);
   const levelsVision = Array.from(
     new Set((statsVision || []).flatMap((d) => d.levels.map((l) => l.level)))
@@ -4873,7 +4931,7 @@ export default function UserAnalyticsDashboard() {
               `(Approved: ${sb.approved || 0} | Rejected: ${sb.rejected || 0} | Requested: ${sb.requested || 0})<br/>`;
         lvl.subjects.forEach((sub: any) => {
           const ssb = sub.status_breakdown || {};
-          txt += `&nbsp;&nbsp;• ${sub.subject}: ${sub.count} ` +
+          txt += `&nbsp;&nbsp; ${sub.subject}: ${sub.count} ` +
                 `(Approved: ${ssb.approved || 0} | Rejected: ${ssb.rejected || 0} | Requested: ${ssb.requested || 0})<br/>`;
         });
       });
@@ -4887,7 +4945,15 @@ export default function UserAnalyticsDashboard() {
     xAxis: {
       type: "category",
       data: periodsVision.map((p) => formatPeriod(p, groupingVision)),
-      axisLabel: { rotate: groupingVision === "daily" ? 45 : 0 },
+      axisLabel: { 
+        rotate: groupingVision === "daily" ? 45 : 30,
+        formatter: (value: string) => formatWeeklyXAxisLabel(value, groupingVision),
+        rich: {
+          a: { fontWeight: 'bold', fontSize: 11, lineHeight: 16 },
+          b: { fontSize: 10, color: '#666', lineHeight: 14 },
+        },
+        margin: 20,
+      },
     },
     yAxis: { type: "value", name: "Users Completed" },
     dataZoom: [
@@ -4905,7 +4971,6 @@ export default function UserAnalyticsDashboard() {
   >("daily");
   const [VisionScore, setVisionScore] = useState<ScoreRow[]>([]);
   const [VisionScoreLoading, setVisionScoreLoading] = useState(false);
-
   useEffect(() => {
     setVisionScoreLoading(true);
     const filterParams = buildFilterParams(appliedFilters);
@@ -4928,16 +4993,23 @@ export default function UserAnalyticsDashboard() {
         setVisionScore([]);
       });
   }, [groupingVisionScore, appliedFilters]);
-
   const periodsVisionScore = VisionScore.map((d) => d.period);
   const scoresVisionScore = VisionScore.map((d) => d.total_score);
   const optionVisionScore = {
-    title: { text: "Vision Score Over Time", left: "center" },
+    title: { text: "Vision Coins Over Time", left: "center" },
     tooltip: { trigger: "axis", axisPointer: { type: "line" } },
     xAxis: {
       type: "category",
       data: periodsVisionScore.map((p) => formatPeriod(p, groupingVisionScore)),
-      axisLabel: { rotate: groupingVisionScore === "daily" ? 45 : 0 },
+      axisLabel: { 
+        rotate: groupingVisionScore === "daily" ? 45 : 30,
+        formatter: (value: string) => formatWeeklyXAxisLabel(value, groupingVisionScore),
+        rich: {
+          a: { fontWeight: 'bold', fontSize: 11, lineHeight: 16 },
+          b: { fontSize: 10, color: '#666', lineHeight: 14 },
+        },
+        margin: 20,
+      },
     },
     yAxis: { type: "value", name: "Score" },
     series: [
@@ -4952,7 +5024,6 @@ export default function UserAnalyticsDashboard() {
   };
   const [totalVisionScore, setTotalVisionScore] = useState<number>(0);
   const [totalVisionSubmitted, setTotalVisionSubmitted] = useState<number>(0);
-
   const exportToExcel = () => {
     const workbook = XLSX.utils.book_new();
     const timestamp = new Date().toISOString();
@@ -5125,7 +5196,6 @@ export default function UserAnalyticsDashboard() {
       .replace(/:/g, "-")}.xlsx`;
     XLSX.writeFile(workbook, filename);
   };
-
   // Apply filters handler with loading state
 const handleApplyFilters = async () => {
   setApplyingFilters(true);
@@ -5134,7 +5204,6 @@ const handleApplyFilters = async () => {
   await loadDashboardData();
   setApplyingFilters(false); // Reset after done
 };
-
   return (
     <div className={`page bg-light ${inter.className} font-sans`}>
       <Sidebar />
@@ -5174,22 +5243,27 @@ const handleApplyFilters = async () => {
                         disabled={
                           applyingFilters ||
                           (globalFilters.state === appliedFilters.state &&
-                          globalFilters.city === appliedFilters.city &&
-                          globalFilters.schoolCode ===
-                            appliedFilters.schoolCode &&
-                          globalFilters.userType === appliedFilters.userType &&
-                          globalFilters.grade === appliedFilters.grade &&
-                          globalFilters.gender === appliedFilters.gender &&
-                          globalFilters.dateRange ===
-                            appliedFilters.dateRange &&
-                          globalFilters.startDate ===
-                            appliedFilters.startDate &&
-                          globalFilters.endDate === appliedFilters.endDate)
+                            globalFilters.city === appliedFilters.city &&
+                            globalFilters.schoolCode ===
+                              appliedFilters.schoolCode &&
+                            globalFilters.userType ===
+                              appliedFilters.userType &&
+                            globalFilters.grade === appliedFilters.grade &&
+                            globalFilters.gender === appliedFilters.gender &&
+                            globalFilters.dateRange ===
+                              appliedFilters.dateRange &&
+                            globalFilters.startDate ===
+                              appliedFilters.startDate &&
+                            globalFilters.endDate === appliedFilters.endDate)
                         }
                       >
                         {applyingFilters ? (
                           <>
-                            <span className="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
+                            <span
+                              className="spinner-border spinner-border-sm me-1"
+                              role="status"
+                              aria-hidden="true"
+                            ></span>
                             Applying...
                           </>
                         ) : (
@@ -5224,7 +5298,8 @@ const handleApplyFilters = async () => {
                           globalFilters.dateRange === "All" &&
                           globalFilters.gender === "All" &&
                           !globalFilters.startDate &&
-                          !globalFilters.endDate}
+                          !globalFilters.endDate
+                        }
                       >
                         Clear All Filters
                       </button>
@@ -5488,7 +5563,7 @@ const handleApplyFilters = async () => {
                       !appliedFilters.startDate &&
                       !appliedFilters.endDate && (
                         <span className="text-muted">
-                          No filters applied — showing all data
+                          No filters applied showing all data
                         </span>
                       )}
                   </small>
@@ -5641,7 +5716,7 @@ const handleApplyFilters = async () => {
                   color: "bg-sky-900",
                 },
                 {
-                  title: "Total Vision Score Earned",
+                  title: "Total Vision Coins Earned",
                   value: totalVisionScore,
                   icon: <IconPercentage />,
                   color: "bg-sky-900",
@@ -5763,7 +5838,7 @@ const handleApplyFilters = async () => {
                     />
                   )}
                 </div>
-                {/* ... repeat for all other charts — they already use appliedFilters via useEffect dependencies */}
+                {/* ... repeat for all other charts â €   they already use appliedFilters via useEffect dependencies */}
                 {/* Gender Chart */}
                 <div className="w-full h-45">
                   <div style={{ marginBottom: "20px" }}>
@@ -6294,7 +6369,10 @@ const handleApplyFilters = async () => {
                       </button>
                     </div>
                     <div style={{ marginBottom: "20px", padding: "0 1.25rem" }}>
-                      <label htmlFor="vision-grouping-select" style={{ marginRight: "10px" }}>
+                      <label
+                        htmlFor="vision-grouping-select"
+                        style={{ marginRight: "10px" }}
+                      >
                         Grouping:
                       </label>
                       <select
@@ -6310,8 +6388,10 @@ const handleApplyFilters = async () => {
                         <option value="yearly">Yearly</option>
                         <option value="lifetime">Lifetime</option>
                       </select>
-
-                      <label htmlFor="vision-subject-select" style={{ marginRight: "10px" }}>
+                      <label
+                        htmlFor="vision-subject-select"
+                        style={{ marginRight: "10px" }}
+                      >
                         Subject:
                       </label>
                       <select
@@ -6331,8 +6411,10 @@ const handleApplyFilters = async () => {
                           </option>
                         ))}
                       </select>
-
-                      <label htmlFor="vision-assigned-by-select" style={{ marginRight: "10px" }}>
+                      <label
+                        htmlFor="vision-assigned-by-select"
+                        style={{ marginRight: "10px" }}
+                      >
                         Assigned By:
                       </label>
                       <select
@@ -6345,10 +6427,7 @@ const handleApplyFilters = async () => {
                         <option value="self">Self Assigned</option>
                         <option value="teacher">By Teacher</option>
                       </select>
-
-                      <label htmlFor="vision-status-select">
-                        Status:
-                      </label>
+                      <label htmlFor="vision-status-select">Status:</label>
                       <select
                         id="vision-status-select"
                         value={visionStatus}
@@ -6360,9 +6439,11 @@ const handleApplyFilters = async () => {
                         <option value="rejected">Rejected</option>
                       </select>
                     </div>
-
                     {visionLoading ? (
-                      <div className="text-center" style={{ padding: "1.25rem" }}>
+                      <div
+                        className="text-center"
+                        style={{ padding: "1.25rem" }}
+                      >
                         <div
                           className="spinner-border text-purple"
                           role="status"
@@ -6460,7 +6541,7 @@ const handleApplyFilters = async () => {
                   <div className="card shadow-sm border-0 h-100">
                     <div className="card-header bg-transparent py-3">
                       <h3 className="card-title mb-0 fw-semibold">
-                        Quiz Points Over Time
+                        Quiz Coins Over Time
                       </h3>
                       <button
                         onClick={() =>
@@ -6678,7 +6759,7 @@ const handleApplyFilters = async () => {
                   <div className="card shadow-sm border-0 h-100">
                     <div className="card-header bg-transparent py-3">
                       <h3 className="card-title mb-0 fw-semibold">
-                        Vision Score Earned Over Time
+                        Vision Coins Earned Over Time
                       </h3>
                       {/* Download button */}
                       <button
@@ -7127,14 +7208,41 @@ const handleApplyFilters = async () => {
                       ) : (
                         <LazyChart
                           ref={chartRef9}
-                          option={chartOptionStudent}
+                          option={{
+                            ...chartOptionStudent,
+                            xAxis: {
+                              ...chartOptionStudent.xAxis,
+                              axisLabel: {
+                                rotate: studentGrouping === "daily" ? 45 : 30,
+                                formatter: (value: string) =>
+                                  formatWeeklyXAxisLabel(
+                                    value,
+                                    studentGrouping
+                                  ),
+                                rich: {
+                                  a: {
+                                    fontWeight: "bold",
+                                    fontSize: 11,
+                                    lineHeight: 16,
+                                  },
+                                  b: {
+                                    fontSize: 10,
+                                    color: "#666",
+                                    lineHeight: 14,
+                                  },
+                                },
+                                margin: 20,
+                              },
+                            },
+                          }}
                           style={{ height: "400px", width: "100%" }}
                           loading={studentLoading || loadingPhase2}
                         />
-                      )}{" "}
+                      )}
                     </div>
                   </div>
                 </div>
+
                 {/* Teacher Demographics Distribution graph */}
                 <div className="col-12 col-xl-6">
                   <div className="card shadow-sm border-0 h-100">
@@ -7189,7 +7297,6 @@ const handleApplyFilters = async () => {
                             </option>
                           ))}
                         </select>
-                        {/* <-- new state select */}
                         <label
                           htmlFor="teacher-state-select"
                           style={{ margin: "0 10px" }}
@@ -7222,7 +7329,33 @@ const handleApplyFilters = async () => {
                       ) : (
                         <LazyChart
                           ref={chartRef10}
-                          option={chartOptionTeacher}
+                          option={{
+                            ...chartOptionTeacher,
+                            xAxis: {
+                              ...chartOptionTeacher.xAxis,
+                              axisLabel: {
+                                rotate: teacherGrouping === "daily" ? 45 : 30,
+                                formatter: (value: string) =>
+                                  formatWeeklyXAxisLabel(
+                                    value,
+                                    teacherGrouping
+                                  ),
+                                rich: {
+                                  a: {
+                                    fontWeight: "bold",
+                                    fontSize: 11,
+                                    lineHeight: 16,
+                                  },
+                                  b: {
+                                    fontSize: 10,
+                                    color: "#666",
+                                    lineHeight: 14,
+                                  },
+                                },
+                                margin: 20,
+                              },
+                            },
+                          }}
                           style={{ height: "400px", width: "100%" }}
                           loading={teacherLoading || loadingPhase2}
                         />
@@ -7230,6 +7363,7 @@ const handleApplyFilters = async () => {
                     </div>
                   </div>
                 </div>
+
                 {/* School Demographics Distribution graph */}
                 <div className="col-12 col-xl-6">
                   <div className="card shadow-sm border-0 h-100">
@@ -7302,13 +7436,37 @@ const handleApplyFilters = async () => {
                     ) : (
                       <LazyChart
                         ref={chartRef16}
-                        option={chartOptionSchool}
+                        option={{
+                          ...chartOptionSchool,
+                          xAxis: {
+                            ...chartOptionSchool.xAxis,
+                            axisLabel: {
+                              rotate: schoolGrouping === "daily" ? 45 : 30,
+                              formatter: (value: string) =>
+                                formatWeeklyXAxisLabel(value, schoolGrouping),
+                              rich: {
+                                a: {
+                                  fontWeight: "bold",
+                                  fontSize: 11,
+                                  lineHeight: 16,
+                                },
+                                b: {
+                                  fontSize: 10,
+                                  color: "#666",
+                                  lineHeight: 14,
+                                },
+                              },
+                              margin: 20,
+                            },
+                          },
+                        }}
                         style={{ height: "400px", width: "100%" }}
                         loading={schoolLoading || loadingPhase2}
                       />
                     )}
                   </div>
                 </div>
+
                 {/* Student Count By Level graph */}
                 <div className="col-12 col-xl-6">
                   <div className="card shadow-sm border-0 h-100">
@@ -7344,36 +7502,6 @@ const handleApplyFilters = async () => {
                       </button>
                     </div>
                     <div className="card-body pt-0">
-                      {/* <div className="mb-4">
-                                <label className="mr-2 font-semibold">Select Level:</label>
-                                <select
-                                    value={selectedLevel}
-                                    onChange={(e) => setSelectedLevel(e.target.value)}
-                                    className="border p-1 rounded"
-                                >
-                                    <option value="all">All Levels</option>
-                                    <option value="1">Level 1</option>
-                                    <option value="2">Level 2</option>
-                                    <option value="3">Level 3</option>
-                                    <option value="4">Level 4</option>
-                                </select>
-                                </div> */}
-                      <div className="mb-4">
-                        <label className="mr-2 font-semibold">
-                          Select Subject:
-                        </label>
-                        <select
-                          value={selectedSubject}
-                          onChange={(e) => {
-                            setSelectedSubject(e.target.value);
-                            // setSelectedLevel("all")
-                          }}
-                          className="border p-1 rounded"
-                        >
-                          <option value="science">Science</option>
-                          <option value="maths">Maths</option>
-                        </select>
-                      </div>
                       <div style={{ marginBottom: "20px" }}>
                         <label htmlFor="grouping-level-select">
                           Select Time Grouping:{" "}
@@ -7406,7 +7534,6 @@ const handleApplyFilters = async () => {
                           <option value="level4">Level 4 (Grade 8+)</option>
                         </select>
                       </div>
-                      {/* Loading, error, or chart */}
                       {loadingLevel ? (
                         <div style={{ textAlign: "center" }}>
                           <div
@@ -7420,7 +7547,30 @@ const handleApplyFilters = async () => {
                       ) : (
                         <LazyChart
                           ref={chartRef11}
-                          option={EchartLevelOption}
+                          option={{
+                            ...EchartLevelOption,
+                            xAxis: {
+                              ...EchartLevelOption.xAxis,
+                              axisLabel: {
+                                rotate: groupingLevel === "daily" ? 45 : 30,
+                                formatter: (value: string) =>
+                                  formatWeeklyXAxisLabel(value, groupingLevel),
+                                rich: {
+                                  a: {
+                                    fontWeight: "bold",
+                                    fontSize: 11,
+                                    lineHeight: 16,
+                                  },
+                                  b: {
+                                    fontSize: 10,
+                                    color: "#666",
+                                    lineHeight: 14,
+                                  },
+                                },
+                                margin: 20,
+                              },
+                            },
+                          }}
                           style={{ height: "400px", width: "100%" }}
                           loading={loadingLevel || loadingPhase2}
                         />
@@ -7428,6 +7578,7 @@ const handleApplyFilters = async () => {
                     </div>
                   </div>
                 </div>
+
                 {/* Teacher Assignments */}
                 <div className="col-12 col-xl-6">
                   <div className="card shadow-sm border-0 h-100">
@@ -7437,6 +7588,48 @@ const handleApplyFilters = async () => {
                       </h3>
                     </div>
                     <div className="card-body pt-0">
+                      {/* Local Time Filter UI — ONLY for this chart */}
+                      <div className="mb-3">
+                        <label className="form-label">Time Range</label>
+                        <select
+                          value={teacherAssignDateRange}
+                          onChange={(e) =>
+                            setTeacherAssignDateRange(e.target.value)
+                          }
+                          className="form-select"
+                        >
+                          <option value="lifetime">Lifetime</option>
+                          <option value="last7days">Last 7 Days</option>
+                          <option value="last30days">Last 30 Days</option>
+                          <option value="last6months">Last 6 Months</option>
+                          <option value="lastyear">Last Year</option>
+                          <option value="custom">Custom Range</option>
+                        </select>
+                      </div>
+                      {teacherAssignDateRange === "custom" && (
+                        <div className="row g-2 mb-3">
+                          <div className="col">
+                            <input
+                              type="date"
+                              className="form-control"
+                              value={teacherAssignStartDate}
+                              onChange={(e) =>
+                                setTeacherAssignStartDate(e.target.value)
+                              }
+                            />
+                          </div>
+                          <div className="col">
+                            <input
+                              type="date"
+                              className="form-control"
+                              value={teacherAssignEndDate}
+                              onChange={(e) =>
+                                setTeacherAssignEndDate(e.target.value)
+                              }
+                            />
+                          </div>
+                        </div>
+                      )}
                       <div style={{ height: "300px" }}>
                         <ChartJSBar
                           data={teacherAssignData}
@@ -7446,6 +7639,7 @@ const handleApplyFilters = async () => {
                     </div>
                   </div>
                 </div>
+
                 {/* Coupon Redemptions */}
                 <div className="col-12 col-xl-4">
                   <div className="card shadow-sm border-0 h-100">
@@ -7464,6 +7658,7 @@ const handleApplyFilters = async () => {
                     </div>
                   </div>
                 </div>
+
                 {/* User Types */}
                 <div className="col-12 col-xl-4">
                   <div className="card">
@@ -7475,20 +7670,7 @@ const handleApplyFilters = async () => {
                     </div>
                   </div>
                 </div>
-                {/* Gender (dummy) Types
-                <div className="col-12 col-xl-4">
-                  <div className="card shadow-sm border-0 h-100">
-                    <div className="card-header bg-transparent py-1">
-                      <h3 className="card-title mb-0 fw-semibold">Gender Distribution</h3>
-                    </div>
-                    <div className="card-body pt-1">
-                      <ReactECharts 
-                        option={genderPieOption} 
-                        style={{ height: '400px', width: '100%' }} 
-                      />
-                    </div>
-                  </div>
-                </div> */}
+
                 {/* School Distribution */}
                 <div className="col-12 col-xl-8">
                   <div className="card shadow-sm border-0 h-100">
@@ -7511,7 +7693,6 @@ const handleApplyFilters = async () => {
             )}
           </div>
         </div>
-        
         {/* Footer */}
         <footer className="footer bg-white border-top py-3 mt-auto">
           <div className="container-xl">

@@ -1948,7 +1948,7 @@ export default function TeachersDashboard() {
                   color: "bg-sky-900",
                 },
                 {
-                  title: "Total Vision Score Earned",
+                  title: "Total Vision Coins Earned",
                   value: totalVisionScore,
                   icon: <IconUser />,
                   color: "bg-sky-900",

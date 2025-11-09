@@ -1844,7 +1844,7 @@ export default function StudentDashboard() {
   };
   // 3. Build your ECharts option
   const pointsMissionChartOption = {
-    title: { text: "Mission Points Over Time", left: "center" },
+    title: { text: "Mission Coins Over Time", left: "center" },
     tooltip: {
       trigger: "axis",
       axisPointer: { type: "shadow" },
@@ -1943,7 +1943,7 @@ export default function StudentDashboard() {
   };
   // 3. Build your ECharts option
   const pointsJigyasaChartOption = {
-    title: { text: "Jigyasa Points Over Time", left: "center" },
+    title: { text: "Jigyasa Coins Over Time", left: "center" },
     tooltip: {
       trigger: "axis",
       axisPointer: { type: "shadow" },
@@ -2041,7 +2041,7 @@ export default function StudentDashboard() {
   };
   // 3. Build your ECharts option
   const pointsPragyaChartOption = {
-    title: { text: "Pragya Points Over Time", left: "center" },
+    title: { text: "Pragya Coins Over Time", left: "center" },
     tooltip: {
       trigger: "axis",
       axisPointer: { type: "shadow" },
@@ -3271,7 +3271,7 @@ export default function StudentDashboard() {
   const periodsVisionScore = VisionScore.map((d) => d.period);
   const scoresVisionScore = VisionScore.map((d) => d.total_score);
   const optionVisionScore = {
-    title: { text: "Vision Score Over Time", left: "center" },
+    title: { text: "Vision Coins Over Time", left: "center" },
     tooltip: { trigger: "axis", axisPointer: { type: "line" } },
     xAxis: {
       type: "category",
@@ -3379,13 +3379,13 @@ export default function StudentDashboard() {
               //   color: "bg-blue",
               // },
               {
-                title: "Total Points Earned",
+                title: "Total Coins Earned",
                 value: totalPointsEarned,
                 icon: <IconUser />,
                 color: "bg-purple",
               },
               {
-                title: "Total Points Redeemed",
+                title: "Total Coins Redeemed",
                 value: totalPointsRedeemed,
                 icon: <IconUserFilled />,
                 color: "bg-teal",
@@ -3397,7 +3397,7 @@ export default function StudentDashboard() {
                 color: "bg-sky-900",
               },
               {
-                title: "Total Vision Score Earned",
+                title: "Total Vision Coins Earned",
                 value: totalVisionScore,
                 icon: <IconUser />,
                 color: "bg-sky-900",
@@ -3759,9 +3759,9 @@ export default function StudentDashboard() {
                         <IconTrophy size={24} />
                       </div>
                       <div>
-                        <div className="subheader">Vision Scores</div>
+                        <div className="subheader">Vision Coins</div>
                         <div className="text-muted">
-                          Click to see Vision Scores Earned Over Time
+                          Click to see Vision Coins Earned Over Time
                         </div>
                       </div>
                     </div>
@@ -5114,7 +5114,7 @@ export default function StudentDashboard() {
                     <div className="card shadow-sm border-0 h-100">
                       <div className="card-header bg-transparent py-3">
                         <h3 className="card-title mb-0 fw-semibold">
-                          Vision Scores Over Time
+                          Vision Coins Over Time
                         </h3>
                         {/* Download button */}
                       </div>
