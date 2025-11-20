@@ -35,29 +35,23 @@ import {
   XCircle,
 } from "lucide-react";
 import error from "next/error";
-
 // =============== NEW: Weekly Label Formatter Utility ===============
 const formatWeeklyXAxisLabel = (value: string, currentGrouping: string) => {
   if (currentGrouping !== "weekly") return value;
-
-  const [yearStr, weekStr] = value.split('-');
+  const [yearStr, weekStr] = value.split("-");
   const year = parseInt(yearStr, 10);
   const week = parseInt(weekStr, 10);
   if (!year || !week) return value;
-
   const jan1 = new Date(year, 0, 1);
-  const daysOffset = (week - 1) * 7 - (jan1.getDay() + 6) % 7;
+  const daysOffset = (week - 1) * 7 - ((jan1.getDay() + 6) % 7);
   const weekStart = new Date(jan1.getTime() + daysOffset * 86400000);
   const weekEnd = new Date(weekStart.getTime() + 6 * 86400000);
-
   const format = (d: Date) =>
-    d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
-
+    d.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
   const humanRange = `${format(weekStart)} – ${format(weekEnd)}`;
   return ["{a|" + value + "}", "{b|" + humanRange + "}"].join("\n");
 };
 // ===================================================================
-
 const groupings = [
   "daily",
   "weekly",
@@ -350,7 +344,6 @@ function SearchableDropdown({
     </div>
   );
 }
-
 // const api_startpoint = "http://localhost:5000";
 // const api_startpoint = 'https://lifeapp-api-vv1.vercel.app'
 // const api_startpoint = "http://152.42.239.141:5000";
@@ -365,10 +358,38 @@ export default function StudentDashboard() {
   const [totalStudents, setTotalStudents] = useState<number>(0);
   const [selectedState, setSelectedState] = useState("");
   const [selectedCampaignId, setSelectedCampaignId] = useState("");
+
+  // 👇 NEW: Add Pragya & Jigyasa acceptance filters
+  const [selectedPragyaAcceptance, setSelectedPragyaAcceptance] = useState("");
+  const [selectedJigyasaAcceptance, setSelectedJigyasaAcceptance] =
+    useState("");
+  // 👆 NEW
+
+  // 👇 NEW: Replace old count filters with status+count pattern
+  const [selectedVisionStatus, setSelectedVisionStatus] = useState<string>(""); // e.g., "requested"
+  const [selectedVisionCount, setSelectedVisionCount] = useState<string>("");
+  const [selectedMissionStatus, setSelectedMissionStatus] =
+    useState<string>("");
+  const [selectedMissionCount, setSelectedMissionCount] = useState<string>("");
+  const [selectedJigyasaStatus, setSelectedJigyasaStatus] =
+    useState<string>("");
+  const [selectedJigyasaCount, setSelectedJigyasaCount] = useState<string>("");
+  const [selectedPragyaStatus, setSelectedPragyaStatus] = useState<string>("");
+  const [selectedPragyaCount, setSelectedPragyaCount] = useState<string>("");
+  // 👆 NEW
+
   useEffect(() => {
     async function fetchStudentCount() {
       try {
-        const res = await fetch(`${api_startpoint}/api/total-student-count`);
+        // 👇 FIX: Use POST to match backend expectations & avoid 405/500
+        const res = await fetch(
+          `${api_startpoint}/api/total-student-count-student-dashboard`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({}),
+          }
+        );
         const data = await res.json();
         if (data && data.length > 0) {
           setTotalStudents(data[0].count);
@@ -379,6 +400,7 @@ export default function StudentDashboard() {
     }
     fetchStudentCount();
   }, []);
+
   const [states, setStates] = useState<string[]>([]);
   const [isStatesLoading, setIsStatesLoading] = useState(false);
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
@@ -663,6 +685,23 @@ export default function StudentDashboard() {
       vision_acceptance: selectedVisionAcceptance, // Add this
       vision_requested_no: selectedVisionRequestedNo, // Add this
       vision_accepted_no: selectedVisionAcceptedNo, // Add this
+
+      // 👇 NEW: Add new acceptance filters
+      pragya_acceptance: selectedPragyaAcceptance,
+      jigyasa_acceptance: selectedJigyasaAcceptance,
+      // 👆 NEW
+
+      // 👇 NEW: Map status+count to expected backend fields
+      vision_status: selectedVisionStatus,
+      vision_count: selectedVisionCount,
+      mission_status: selectedMissionStatus,
+      mission_count: selectedMissionCount,
+      jigyasa_status: selectedJigyasaStatus,
+      jigyasa_count: selectedJigyasaCount,
+      pragya_status: selectedPragyaStatus,
+      pragya_count: selectedPragyaCount,
+      // 👆 NEW
+
       earn_coins: selectedEarnCoins,
       from_date: selectedFromDate,
       to_date: selectedToDate,
@@ -756,6 +795,20 @@ export default function StudentDashboard() {
     setSelectedVisionAcceptance("");
     setSelectedVisionRequestedNo("");
     setSelectedVisionAcceptedNo("");
+
+    // 👇 NEW: Clear new filters
+    setSelectedPragyaAcceptance("");
+    setSelectedJigyasaAcceptance("");
+    setSelectedVisionStatus("");
+    setSelectedVisionCount("");
+    setSelectedMissionStatus("");
+    setSelectedMissionCount("");
+    setSelectedJigyasaStatus("");
+    setSelectedJigyasaCount("");
+    setSelectedPragyaStatus("");
+    setSelectedPragyaCount("");
+    // 👆 NEW
+
     setSelectedMobileNo("");
     setInputCode("");
     setSelectedSchoolCode([]);
@@ -1287,11 +1340,14 @@ export default function StudentDashboard() {
   useEffect(() => {
     async function fetchTotalPointsEarned() {
       try {
-        const res = await fetch(`${api_startpoint}/api/total-points-earned-in-students-dashboard`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({}),
-        });
+        const res = await fetch(
+          `${api_startpoint}/api/total-points-earned-in-students-dashboard`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({}),
+          }
+        );
         if (!res.ok) {
           throw new Error(`HTTP error! status: ${res.status}`);
         }
@@ -1310,11 +1366,14 @@ export default function StudentDashboard() {
   useEffect(() => {
     async function fetchTotalPointsRedeemed() {
       try {
-        const res = await fetch(`${api_startpoint}/api/total-points-redeemed-in-students-dashboard`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({}),
-        });
+        const res = await fetch(
+          `${api_startpoint}/api/total-points-redeemed-in-students-dashboard`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({}),
+          }
+        );
         const data = await res.json();
         if (data && data.length > 0) {
           setTotalPointsRedeemed(data[0].total_coins_redeemed);
@@ -1436,14 +1495,19 @@ export default function StudentDashboard() {
   );
   const [modalOpen, setModalOpen] = useState<boolean>(false);
   const [grouping, setGrouping] = useState<string>("monthly"); // Default grouping
-  const [missionLevel, setMissionLevel] = useState<"all" | "level1" | "level2" | "level3" | "level4">("all");
+  const [missionLevel, setMissionLevel] = useState<
+    "all" | "level1" | "level2" | "level3" | "level4"
+  >("all");
   // Key improvement: UseEffect to trigger data fetch when grouping changes
   useEffect(() => {
     if (modalOpen) {
       fetchMissionStatusData(grouping, missionLevel);
     }
   }, [grouping, missionLevel, modalOpen]);
-  const fetchMissionStatusData = (selectedGrouping: string, selectedLevel: string) => {
+  const fetchMissionStatusData = (
+    selectedGrouping: string,
+    selectedLevel: string
+  ) => {
     setLoading(true);
     setMissionStatusError(null);
     fetch(`${api_startpoint}/api/mission-status-graph`, {
@@ -1533,8 +1597,8 @@ export default function StudentDashboard() {
         interval: 0, // Show all labels
         formatter: (val: string) => formatWeeklyXAxisLabel(val, grouping),
         rich: {
-          a: { fontWeight: 'bold', fontSize: 11, lineHeight: 16 },
-          b: { fontSize: 10, color: '#666', lineHeight: 14 },
+          a: { fontWeight: "bold", fontSize: 11, lineHeight: 16 },
+          b: { fontSize: 10, color: "#666", lineHeight: 14 },
         },
         margin: 20,
       },
@@ -1754,8 +1818,8 @@ export default function StudentDashboard() {
         rotate: groupingLevel === "daily" ? 45 : 0,
         formatter: (val: string) => formatWeeklyXAxisLabel(val, groupingLevel),
         rich: {
-          a: { fontWeight: 'bold', fontSize: 11, lineHeight: 16 },
-          b: { fontSize: 10, color: '#666', lineHeight: 14 },
+          a: { fontWeight: "bold", fontSize: 11, lineHeight: 16 },
+          b: { fontSize: 10, color: "#666", lineHeight: 14 },
         },
         margin: 20,
       },
@@ -1857,10 +1921,11 @@ export default function StudentDashboard() {
       boundaryGap: true,
       axisLabel: {
         rotate: pointsMissionGrouping === "daily" ? 45 : 0,
-        formatter: (val: string) => formatWeeklyXAxisLabel(val, pointsMissionGrouping),
+        formatter: (val: string) =>
+          formatWeeklyXAxisLabel(val, pointsMissionGrouping),
         rich: {
-          a: { fontWeight: 'bold', fontSize: 11, lineHeight: 16 },
-          b: { fontSize: 10, color: '#666', lineHeight: 14 },
+          a: { fontWeight: "bold", fontSize: 11, lineHeight: 16 },
+          b: { fontSize: 10, color: "#666", lineHeight: 14 },
         },
         margin: 20,
       },
@@ -1956,10 +2021,11 @@ export default function StudentDashboard() {
       boundaryGap: true,
       axisLabel: {
         rotate: pointsJigyasaGrouping === "daily" ? 45 : 0,
-        formatter: (val: string) => formatWeeklyXAxisLabel(val, pointsJigyasaGrouping),
+        formatter: (val: string) =>
+          formatWeeklyXAxisLabel(val, pointsJigyasaGrouping),
         rich: {
-          a: { fontWeight: 'bold', fontSize: 11, lineHeight: 16 },
-          b: { fontSize: 10, color: '#666', lineHeight: 14 },
+          a: { fontWeight: "bold", fontSize: 11, lineHeight: 16 },
+          b: { fontSize: 10, color: "#666", lineHeight: 14 },
         },
         margin: 20,
       },
@@ -2054,10 +2120,11 @@ export default function StudentDashboard() {
       boundaryGap: true,
       axisLabel: {
         rotate: pointsPragyaGrouping === "daily" ? 45 : 0,
-        formatter: (val: string) => formatWeeklyXAxisLabel(val, pointsPragyaGrouping),
+        formatter: (val: string) =>
+          formatWeeklyXAxisLabel(val, pointsPragyaGrouping),
         rich: {
-          a: { fontWeight: 'bold', fontSize: 11, lineHeight: 16 },
-          b: { fontSize: 10, color: '#666', lineHeight: 14 },
+          a: { fontWeight: "bold", fontSize: 11, lineHeight: 16 },
+          b: { fontSize: 10, color: "#666", lineHeight: 14 },
         },
         margin: 20,
       },
@@ -2145,17 +2212,18 @@ export default function StudentDashboard() {
         // Rotate the main label (e.g., "2024-1") diagonally
         rotate: 30,
         // Formatter to show both machine and human-readable labels
-        formatter: (val: string) => formatWeeklyXAxisLabel(val, couponRedeemsGrouping),
+        formatter: (val: string) =>
+          formatWeeklyXAxisLabel(val, couponRedeemsGrouping),
         // Rich text styling for two-line labels
         rich: {
           a: {
-            fontWeight: 'bold',
+            fontWeight: "bold",
             fontSize: 11,
             lineHeight: 16,
           },
           b: {
             fontSize: 10,
-            color: '#666',
+            color: "#666",
             lineHeight: 14,
           },
         },
@@ -2336,10 +2404,11 @@ export default function StudentDashboard() {
       boundaryGap: true,
       axisLabel: {
         rotate: missionGrouping === "daily" ? 45 : 0,
-        formatter: (val: string) => formatWeeklyXAxisLabel(val, missionGrouping),
+        formatter: (val: string) =>
+          formatWeeklyXAxisLabel(val, missionGrouping),
         rich: {
-          a: { fontWeight: 'bold', fontSize: 11, lineHeight: 16 },
-          b: { fontSize: 10, color: '#666', lineHeight: 14 },
+          a: { fontWeight: "bold", fontSize: 11, lineHeight: 16 },
+          b: { fontSize: 10, color: "#666", lineHeight: 14 },
         },
         margin: 20,
       },
@@ -2512,10 +2581,11 @@ export default function StudentDashboard() {
       boundaryGap: true,
       axisLabel: {
         rotate: missionGrouping === "daily" ? 45 : 0,
-        formatter: (val: string) => formatWeeklyXAxisLabel(val, missionGrouping),
+        formatter: (val: string) =>
+          formatWeeklyXAxisLabel(val, missionGrouping),
         rich: {
-          a: { fontWeight: 'bold', fontSize: 11, lineHeight: 16 },
-          b: { fontSize: 10, color: '#666', lineHeight: 14 },
+          a: { fontWeight: "bold", fontSize: 11, lineHeight: 16 },
+          b: { fontSize: 10, color: "#666", lineHeight: 14 },
         },
         margin: 20,
       },
@@ -2623,10 +2693,11 @@ export default function StudentDashboard() {
       boundaryGap: true,
       axisLabel: {
         rotate: jigyasaGrouping === "daily" ? 45 : 0,
-        formatter: (val: string) => formatWeeklyXAxisLabel(val, jigyasaGrouping),
+        formatter: (val: string) =>
+          formatWeeklyXAxisLabel(val, jigyasaGrouping),
         rich: {
-          a: { fontWeight: 'bold', fontSize: 11, lineHeight: 16 },
-          b: { fontSize: 10, color: '#666', lineHeight: 14 },
+          a: { fontWeight: "bold", fontSize: 11, lineHeight: 16 },
+          b: { fontSize: 10, color: "#666", lineHeight: 14 },
         },
         margin: 20,
       },
@@ -2776,10 +2847,11 @@ export default function StudentDashboard() {
       boundaryGap: true,
       axisLabel: {
         rotate: jigyasaGrouping === "daily" ? 45 : 0,
-        formatter: (val: string) => formatWeeklyXAxisLabel(val, jigyasaGrouping),
+        formatter: (val: string) =>
+          formatWeeklyXAxisLabel(val, jigyasaGrouping),
         rich: {
-          a: { fontWeight: 'bold', fontSize: 11, lineHeight: 16 },
-          b: { fontSize: 10, color: '#666', lineHeight: 14 },
+          a: { fontWeight: "bold", fontSize: 11, lineHeight: 16 },
+          b: { fontSize: 10, color: "#666", lineHeight: 14 },
         },
         margin: 20,
       },
@@ -2885,8 +2957,8 @@ export default function StudentDashboard() {
         rotate: pragyaGrouping === "daily" ? 45 : 0,
         formatter: (val: string) => formatWeeklyXAxisLabel(val, pragyaGrouping),
         rich: {
-          a: { fontWeight: 'bold', fontSize: 11, lineHeight: 16 },
-          b: { fontSize: 10, color: '#666', lineHeight: 14 },
+          a: { fontWeight: "bold", fontSize: 11, lineHeight: 16 },
+          b: { fontSize: 10, color: "#666", lineHeight: 14 },
         },
         margin: 20,
       },
@@ -3038,8 +3110,8 @@ export default function StudentDashboard() {
         rotate: pragyaGrouping === "daily" ? 45 : 0,
         formatter: (val: string) => formatWeeklyXAxisLabel(val, pragyaGrouping),
         rich: {
-          a: { fontWeight: 'bold', fontSize: 11, lineHeight: 16 },
-          b: { fontSize: 10, color: '#666', lineHeight: 14 },
+          a: { fontWeight: "bold", fontSize: 11, lineHeight: 16 },
+          b: { fontSize: 10, color: "#666", lineHeight: 14 },
         },
         margin: 20,
       },
@@ -3123,7 +3195,9 @@ export default function StudentDashboard() {
   const [assignedBy, setAssignedBy] = useState<"all" | "teacher" | "self">(
     "all"
   );
-  const [visionStatus, setVisionStatus] = useState<"all" | "requested" | "approved" | "rejected">("all");
+  const [visionStatus, setVisionStatus] = useState<
+    "all" | "requested" | "approved" | "rejected"
+  >("all");
   const [visionLoading, setVisionLoading] = useState(false);
   const [visionCompleteModal, setVisionCompleteModal] = useState(false);
   // Fetch subjects
@@ -3141,10 +3215,10 @@ export default function StudentDashboard() {
     setVisionLoading(true);
     // Build query parameters safely
     const params = new URLSearchParams();
-    params.append('grouping', groupingVision);
-    if (assignedBy !== 'all') params.append('assigned_by', assignedBy);
-    if (subjectId !== null) params.append('subject_id', subjectId.toString());
-    if (visionStatus !== 'all') params.append('status', visionStatus);
+    params.append("grouping", groupingVision);
+    if (assignedBy !== "all") params.append("assigned_by", assignedBy);
+    if (subjectId !== null) params.append("subject_id", subjectId.toString());
+    if (visionStatus !== "all") params.append("status", visionStatus);
     const url = `${api_startpoint}/api/vision-completion-stats-student-dashboard?${params.toString()}`;
     fetch(url)
       .then((res) => {
@@ -3156,7 +3230,7 @@ export default function StudentDashboard() {
       .then((json) => {
         // Validate response structure
         if (!Array.isArray(json?.data)) {
-          console.warn('Unexpected vision stats response format:', json);
+          console.warn("Unexpected vision stats response format:", json);
           setStatsVision([]);
         } else {
           setStatsVision(json.data);
@@ -3164,7 +3238,7 @@ export default function StudentDashboard() {
         setVisionLoading(false);
       })
       .catch((err) => {
-        console.error('Failed to fetch vision stats:', err);
+        console.error("Failed to fetch vision stats:", err);
         setStatsVision([]); // ensure chart doesn't break
         setVisionLoading(false);
       });
@@ -3230,8 +3304,8 @@ export default function StudentDashboard() {
         rotate: groupingVision === "daily" ? 45 : 0,
         formatter: (val: string) => formatWeeklyXAxisLabel(val, groupingVision),
         rich: {
-          a: { fontWeight: 'bold', fontSize: 11, lineHeight: 16 },
-          b: { fontSize: 10, color: '#666', lineHeight: 14 },
+          a: { fontWeight: "bold", fontSize: 11, lineHeight: 16 },
+          b: { fontSize: 10, color: "#666", lineHeight: 14 },
         },
         margin: 20,
       },
@@ -3257,7 +3331,9 @@ export default function StudentDashboard() {
   useEffect(() => {
     setVisionScoreLoading(true);
     const params = new URLSearchParams({ grouping: groupingVisionScore });
-    fetch(`${api_startpoint}/api/vision-score-stats-student-dashboard?${params}`)
+    fetch(
+      `${api_startpoint}/api/vision-score-stats-student-dashboard?${params}`
+    )
       .then((res) => res.json())
       .then((json) => {
         setVisionScore(json.data);
@@ -3278,10 +3354,11 @@ export default function StudentDashboard() {
       data: periodsVisionScore,
       axisLabel: {
         rotate: groupingVisionScore === "daily" ? 45 : 0,
-        formatter: (val: string) => formatWeeklyXAxisLabel(val, groupingVisionScore),
+        formatter: (val: string) =>
+          formatWeeklyXAxisLabel(val, groupingVisionScore),
         rich: {
-          a: { fontWeight: 'bold', fontSize: 11, lineHeight: 16 },
-          b: { fontSize: 10, color: '#666', lineHeight: 14 },
+          a: { fontWeight: "bold", fontSize: 11, lineHeight: 16 },
+          b: { fontSize: 10, color: "#666", lineHeight: 14 },
         },
         margin: 20,
       },
@@ -3321,6 +3398,7 @@ export default function StudentDashboard() {
         )
       );
   }, []);
+
   return (
     <div className={`page bg-light ${inter.className} font-sans`}>
       {/* Inject CSS styles */}
@@ -3351,116 +3429,117 @@ export default function StudentDashboard() {
                 </header> */}
         <div className="page-body">
           <div className="container-xl pt-0 pb-4">
-          {/* Combined Metrics Grid */}
-          <div className="row g-4 mb-4">
-            {[
-              {
-                title: "Total Students",
-                value: totalStudents,
-                icon: <IconUser />,
-                color: "bg-purple",
-              },
-              // {
-              //   title: "Active Students",
-              //   value: 0,
-              //   icon: <IconUserFilled />,
-              //   color: "bg-teal",
-              // },
-              // {
-              //   title: "Inactive Students",
-              //   value: 0,
-              //   icon: <IconUserExclamation />,
-              //   color: "bg-orange",
-              // },
-              // {
-              //   title: "Highest Online User Count",
-              //   value: 0,
-              //   icon: <IconUserScan />,
-              //   color: "bg-blue",
-              // },
-              {
-                title: "Total Coins Earned",
-                value: totalPointsEarned,
-                icon: <IconUser />,
-                color: "bg-purple",
-              },
-              {
-                title: "Total Coins Redeemed",
-                value: totalPointsRedeemed,
-                icon: <IconUserFilled />,
-                color: "bg-teal",
-              },
-              {
-                title: "Total Vision Completes",
-                value: totalVisionSubmitted,
-                icon: <IconUser />,
-                color: "bg-sky-900",
-              },
-              {
-                title: "Total Vision Coins Earned",
-                value: totalVisionScore,
-                icon: <IconUser />,
-                color: "bg-sky-900",
-              },
-              {
-                title: "Total Participants Joined Mentor Sessions",
-                value: sessionParticipantTotal,
-                icon: <IconUser />,
-                color: "bg-sky-900",
-              },
-              {
-                title: "Total Mentors Participated for Mentor Connect Sessions",
-                value: mentorsParticipatedSessionsTotal,
-                icon: <IconUser />,
-                color: "bg-sky-900",
-              },
-              {
-                title: "Teacher Assign Mission Completes",
-                value: tmcAssignedByTeacher,
-                icon: <IconUserExclamation />,
-                color: "bg-orange",
-              },
-              {
-                title: "Total Sessions Created by Mentors",
-                value: sessions.length,
-                icon: <IconUser />,
-                color: "bg-blue",
-              },
-              {
-                title: "Total Teacher Assigned Vision Completes",
-                value: totalTeacherAssignedVisionCompletes,
-                icon: <IconUser />,
-                color: "bg-blue",
-              },
-            ]
-              // Optional: filter out any null/undefined if you use conditional logic later
-              .filter(Boolean)
-              .map((metric, index) => (
-                <div className="col-sm-6 col-lg-3" key={index}>
-                  <div className="card">
-                    <div className="card-body">
-                      <div className="d-flex align-items-center">
-                        <div>
-                          <div className="subheader">{metric.title}</div>
-                          <div className="h1 mb-3">
-                            <NumberFlow
-                              value={metric.value}
-                              // suffix={metric.suffix || ""}
-                              className="fw-semi-bold text-dark"
-                              transformTiming={{
-                                endDelay: 6,
-                                duration: 750,
-                                easing: "cubic-bezier(0.42, 0, 0.58, 1)",
-                              }}
-                            />
+            {/* Combined Metrics Grid */}
+            <div className="row g-4 mb-4">
+              {[
+                {
+                  title: "Total Students",
+                  value: totalStudents,
+                  icon: <IconUser />,
+                  color: "bg-purple",
+                },
+                // {
+                //   title: "Active Students",
+                //   value: 0,
+                //   icon: <IconUserFilled />,
+                //   color: "bg-teal",
+                // },
+                // {
+                //   title: "Inactive Students",
+                //   value: 0,
+                //   icon: <IconUserExclamation />,
+                //   color: "bg-orange",
+                // },
+                // {
+                //   title: "Highest Online User Count",
+                //   value: 0,
+                //   icon: <IconUserScan />,
+                //   color: "bg-blue",
+                // },
+                {
+                  title: "Total Coins Earned",
+                  value: totalPointsEarned,
+                  icon: <IconUser />,
+                  color: "bg-purple",
+                },
+                {
+                  title: "Total Coins Redeemed",
+                  value: totalPointsRedeemed,
+                  icon: <IconUserFilled />,
+                  color: "bg-teal",
+                },
+                {
+                  title: "Total Vision Completes",
+                  value: totalVisionSubmitted,
+                  icon: <IconUser />,
+                  color: "bg-sky-900",
+                },
+                {
+                  title: "Total Vision Coins Earned",
+                  value: totalVisionScore,
+                  icon: <IconUser />,
+                  color: "bg-sky-900",
+                },
+                {
+                  title: "Total Participants Joined Mentor Sessions",
+                  value: sessionParticipantTotal,
+                  icon: <IconUser />,
+                  color: "bg-sky-900",
+                },
+                {
+                  title:
+                    "Total Mentors Participated for Mentor Connect Sessions",
+                  value: mentorsParticipatedSessionsTotal,
+                  icon: <IconUser />,
+                  color: "bg-sky-900",
+                },
+                {
+                  title: "Teacher Assign Mission Completes",
+                  value: tmcAssignedByTeacher,
+                  icon: <IconUserExclamation />,
+                  color: "bg-orange",
+                },
+                {
+                  title: "Total Sessions Created by Mentors",
+                  value: sessions.length,
+                  icon: <IconUser />,
+                  color: "bg-blue",
+                },
+                {
+                  title: "Total Teacher Assigned Vision Completes",
+                  value: totalTeacherAssignedVisionCompletes,
+                  icon: <IconUser />,
+                  color: "bg-blue",
+                },
+              ]
+                // Optional: filter out any null/undefined if you use conditional logic later
+                .filter(Boolean)
+                .map((metric, index) => (
+                  <div className="col-sm-6 col-lg-3" key={index}>
+                    <div className="card">
+                      <div className="card-body">
+                        <div className="d-flex align-items-center">
+                          <div>
+                            <div className="subheader">{metric.title}</div>
+                            <div className="h1 mb-3">
+                              <NumberFlow
+                                value={metric.value}
+                                // suffix={metric.suffix || ""}
+                                className="fw-semi-bold text-dark"
+                                transformTiming={{
+                                  endDelay: 6,
+                                  duration: 750,
+                                  easing: "cubic-bezier(0.42, 0, 0.58, 1)",
+                                }}
+                              />
+                            </div>
                           </div>
                         </div>
                       </div>
                     </div>
                   </div>
-                </div>
-              ))}
-          </div>
+                ))}
+            </div>
             {/* New Cards for Modal Triggers */}
             <div className="row g-4 mb-4">
               <div
@@ -5031,14 +5110,16 @@ export default function StudentDashboard() {
                           id="vision-subject"
                           value={subjectId ?? ""}
                           onChange={(e) =>
-                            setSubjectId(e.target.value ? Number(e.target.value) : null)
+                            setSubjectId(
+                              e.target.value ? Number(e.target.value) : null
+                            )
                           }
                           className="border rounded p-1 me-3"
                         >
                           <option value="">All Subjects</option>
                           {subjectList.map((s) => (
                             <option key={s.id} value={s.id}>
-                              {typeof s.title === 'string'
+                              {typeof s.title === "string"
                                 ? JSON.parse(s.title).en
                                 : s.title.en}
                             </option>
@@ -5065,7 +5146,9 @@ export default function StudentDashboard() {
                         <select
                           id="vision-status"
                           value={visionStatus}
-                          onChange={(e) => setVisionStatus(e.target.value as any)}
+                          onChange={(e) =>
+                            setVisionStatus(e.target.value as any)
+                          }
                           className="border rounded p-1"
                         >
                           <option value="all">All Statuses</option>
@@ -5084,11 +5167,14 @@ export default function StudentDashboard() {
                           >
                             <span className="visually-hidden">Loading...</span>
                           </div>
-                          <p className="mt-2 text-muted">Loading vision data...</p>
+                          <p className="mt-2 text-muted">
+                            Loading vision data...
+                          </p>
                         </div>
                       ) : statsVision.length === 0 ? (
                         <div className="text-center py-4 text-muted">
-                          No vision completion data available for the selected filters.
+                          No vision completion data available for the selected
+                          filters.
                         </div>
                       ) : (
                         <ReactECharts
@@ -5194,47 +5280,170 @@ export default function StudentDashboard() {
                       <option value="rejected">Vision Rejected</option>
                     </select>
                   </div>
-                  {/* Vision Requested Count */}
+
+                  {/* 👇 NEW: Add Pragya & Jigyasa Acceptance Filters */}
                   <div className="col-12 col-md-6 col-lg-3">
                     <select
                       className="form-select"
-                      value={selectedVisionRequestedNo}
+                      value={selectedPragyaAcceptance}
                       onChange={(e) =>
-                        setSelectedVisionRequestedNo(e.target.value)
+                        setSelectedPragyaAcceptance(e.target.value)
                       }
                     >
-                      <option value="">Select Vision Requested</option>
-                      {Array.from({ length: 20 }, (_, i) => i + 1).map(
-                        (requesteds) => (
-                          <option
-                            key={requesteds}
-                            value={requesteds.toString()}
-                          >
-                            Requests made - {requesteds}
-                          </option>
-                        )
-                      )}
+                      <option value="">All Pragya</option>
+                      <option value="accepted">Pragya Approved</option>
+                      <option value="rejected">Pragya Rejected</option>
                     </select>
                   </div>
-                  {/* Vision Accepted Count */}
                   <div className="col-12 col-md-6 col-lg-3">
                     <select
                       className="form-select"
-                      value={selectedVisionAcceptedNo}
+                      value={selectedJigyasaAcceptance}
                       onChange={(e) =>
-                        setSelectedVisionAcceptedNo(e.target.value)
+                        setSelectedJigyasaAcceptance(e.target.value)
                       }
                     >
-                      <option value="">Select Vision Approved</option>
-                      {Array.from({ length: 20 }, (_, i) => i + 1).map(
-                        (approves) => (
-                          <option key={approves} value={approves.toString()}>
-                            Approves made - {approves}
-                          </option>
-                        )
-                      )}
+                      <option value="">All Jigyasa</option>
+                      <option value="accepted">Jigyasa Approved</option>
+                      <option value="rejected">Jigyasa Rejected</option>
                     </select>
                   </div>
+                  {/* 👆 NEW */}
+
+                  {/* 👇 NEW: Replace old Vision/Mission count dropdowns with status+count pattern */}
+                  {/* Vision Status → Count */}
+                  <div className="col-12 col-md-6 col-lg-3">
+                    <select
+                      className="form-select"
+                      value={selectedVisionStatus}
+                      onChange={(e) => setSelectedVisionStatus(e.target.value)}
+                    >
+                      <option value="">Select Vision Status</option>
+                      <option value="requested">Requested</option>
+                      <option value="approved">Approved</option>
+                      <option value="rejected">Rejected</option>
+                    </select>
+                  </div>
+                  {selectedVisionStatus && (
+                    <div className="col-12 col-md-6 col-lg-3">
+                      <select
+                        className="form-select"
+                        value={selectedVisionCount}
+                        onChange={(e) => setSelectedVisionCount(e.target.value)}
+                      >
+                        <option value="">Select Count</option>
+                        {Array.from({ length: 20 }, (_, i) => i + 1).map(
+                          (n) => (
+                            <option key={n} value={n.toString()}>
+                              {n}
+                            </option>
+                          )
+                        )}
+                      </select>
+                    </div>
+                  )}
+
+                  {/* Mission Status → Count */}
+                  <div className="col-12 col-md-6 col-lg-3">
+                    <select
+                      className="form-select"
+                      value={selectedMissionStatus}
+                      onChange={(e) => setSelectedMissionStatus(e.target.value)}
+                    >
+                      <option value="">Select Mission Status</option>
+                      <option value="requested">Requested</option>
+                      <option value="approved">Approved</option>
+                      <option value="rejected">Rejected</option>
+                    </select>
+                  </div>
+                  {selectedMissionStatus && (
+                    <div className="col-12 col-md-6 col-lg-3">
+                      <select
+                        className="form-select"
+                        value={selectedMissionCount}
+                        onChange={(e) =>
+                          setSelectedMissionCount(e.target.value)
+                        }
+                      >
+                        <option value="">Select Count</option>
+                        {Array.from({ length: 20 }, (_, i) => i + 1).map(
+                          (n) => (
+                            <option key={n} value={n.toString()}>
+                              {n}
+                            </option>
+                          )
+                        )}
+                      </select>
+                    </div>
+                  )}
+
+                  {/* Jigyasa Status → Count */}
+                  <div className="col-12 col-md-6 col-lg-3">
+                    <select
+                      className="form-select"
+                      value={selectedJigyasaStatus}
+                      onChange={(e) => setSelectedJigyasaStatus(e.target.value)}
+                    >
+                      <option value="">Select Jigyasa Status</option>
+                      <option value="requested">Requested</option>
+                      <option value="approved">Approved</option>
+                      <option value="rejected">Rejected</option>
+                    </select>
+                  </div>
+                  {selectedJigyasaStatus && (
+                    <div className="col-12 col-md-6 col-lg-3">
+                      <select
+                        className="form-select"
+                        value={selectedJigyasaCount}
+                        onChange={(e) =>
+                          setSelectedJigyasaCount(e.target.value)
+                        }
+                      >
+                        <option value="">Select Count</option>
+                        {Array.from({ length: 20 }, (_, i) => i + 1).map(
+                          (n) => (
+                            <option key={n} value={n.toString()}>
+                              {n}
+                            </option>
+                          )
+                        )}
+                      </select>
+                    </div>
+                  )}
+
+                  {/* Pragya Status → Count */}
+                  <div className="col-12 col-md-6 col-lg-3">
+                    <select
+                      className="form-select"
+                      value={selectedPragyaStatus}
+                      onChange={(e) => setSelectedPragyaStatus(e.target.value)}
+                    >
+                      <option value="">Select Pragya Status</option>
+                      <option value="requested">Requested</option>
+                      <option value="approved">Approved</option>
+                      <option value="rejected">Rejected</option>
+                    </select>
+                  </div>
+                  {selectedPragyaStatus && (
+                    <div className="col-12 col-md-6 col-lg-3">
+                      <select
+                        className="form-select"
+                        value={selectedPragyaCount}
+                        onChange={(e) => setSelectedPragyaCount(e.target.value)}
+                      >
+                        <option value="">Select Count</option>
+                        {Array.from({ length: 20 }, (_, i) => i + 1).map(
+                          (n) => (
+                            <option key={n} value={n.toString()}>
+                              {n}
+                            </option>
+                          )
+                        )}
+                      </select>
+                    </div>
+                  )}
+                  {/* 👆 NEW */}
+
                   <div className="col-md-3 mb-3">
                     <select
                       id="campaignSelect"
@@ -5297,45 +5506,16 @@ export default function StudentDashboard() {
                       )}
                     </select>
                   </div>
-                  <div className="col-12 col-md-6 col-lg-3">
-                    <select
-                      className="form-select"
-                      value={selectedMissionRequestedNo}
-                      onChange={(e) =>
-                        setSelectedMissionRequestedNo(e.target.value)
-                      }
-                    >
-                      <option value="">Select Mission Requested</option>
-                      {Array.from({ length: 20 }, (_, i) => i + 1).map(
-                        (requesteds) => (
-                          <option
-                            key={requesteds}
-                            value={requesteds.toString()}
-                          >
-                            Requests made - {requesteds}
-                          </option>
-                        )
-                      )}
-                    </select>
-                  </div>
-                  <div className="col-12 col-md-6 col-lg-3">
-                    <select
-                      className="form-select"
-                      value={selectedMissionAcceptedNo}
-                      onChange={(e) =>
-                        setSelectedMissionAcceptedNo(e.target.value)
-                      }
-                    >
-                      <option value="">Select Mission Approved</option>
-                      {Array.from({ length: 20 }, (_, i) => i + 1).map(
-                        (approves) => (
-                          <option key={approves} value={approves.toString()}>
-                            Approves made - {approves}
-                          </option>
-                        )
-                      )}
-                    </select>
-                  </div>
+
+                  {/* 👇 NEW: Removed old count dropdowns */}
+                  {/* Removed:
+                    - Vision Requested Count
+                    - Vision Approved Count
+                    - Mission Requested Count
+                    - Mission Approved Count
+                  */}
+                  {/* 👆 NEW */}
+
                   <div className="col-12 col-md-6 col-lg-3">
                     <select
                       className="form-select"

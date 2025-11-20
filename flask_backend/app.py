@@ -4212,16 +4212,69 @@ def get_schools_by_filters():
     finally:
         connection.close()
 
+@app.route('/api/total-student-count-student-dashboard', methods=['GET', 'POST'])
+def get_total_student_count_student_dashboard():
+    try:
+        filters = request.get_json() or {}
+        
+        # STEP 1: Remove date-related keys before passing to build_filter_conditions
+        filters_no_date = {
+            k: v for k, v in filters.items()
+            if k not in ('date_range', 'start_date', 'end_date')
+        }
+        
+        # STEP 2: Build base WHERE clause for user demographics
+        where_clause, params = build_filter_conditions(filters_no_date)
+        
+        # STEP 3: Fix ambiguous column references by prefixing with 'u.'
+        # (Not strictly needed since no JOIN, but keeps pattern consistent)
+        if "type != 3" in where_clause:
+            where_clause = where_clause.replace("type != 3", "type != 3")
+        for field in ['state', 'city', 'school_code', 'type', 'grade', 'gender']:
+            where_clause = where_clause.replace(f"{field} =", f"u.{field} =")
+        
+        # STEP 4: Build query (users table only)
+        sql = f"""
+            SELECT COUNT(*) as count
+            FROM lifeapp.users u
+            WHERE u.type = 3
+              AND {where_clause}
+        """
+        
+        # STEP 5: Apply date filter on u.created_at
+        if filters.get('date_range') and filters['date_range'] != 'All':
+            dr = filters['date_range']
+            if dr == 'last7days':
+                sql += " AND u.created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)"
+            elif dr == 'last30days':
+                sql += " AND u.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)"
+            elif dr == 'last3months':
+                sql += " AND u.created_at >= DATE_SUB(NOW(), INTERVAL 3 MONTH)"
+            elif dr == 'last6months':
+                sql += " AND u.created_at >= DATE_SUB(NOW(), INTERVAL 6 MONTH)"
+            elif dr == 'lastyear':
+                sql += " AND u.created_at >= DATE_SUB(NOW(), INTERVAL 1 YEAR)"
+        elif filters.get('start_date') and filters.get('end_date'):
+            sql += " AND u.created_at BETWEEN %s AND %s"
+            params.extend([filters['start_date'], filters['end_date']])
+        
+        # STEP 6: Execute
+        result = execute_query(sql, params)
+        count = result[0]['count'] if result else 0
+        
+        return jsonify([{'count': count}]), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route('/api/student_dashboard_search', methods=['POST'])
 def search():
-    """Search and filter student dashboard data with campaign support."""
+    """Search and filter student dashboard data with Pragya/Jigyasa and status+count support."""
     connection = None
     cursor = None
     try:
-        # --- Database Connection ---
         connection = get_db_connection()
         cursor = connection.cursor(pymysql.cursors.DictCursor)
-
         filters = request.get_json() or {}
         logger.info(f"Filters received: {filters}")
 
@@ -4229,40 +4282,60 @@ def search():
         state = filters.get('state')
         city = filters.get('city')
         grade = filters.get('grade')
-        school_codes = filters.get('schoolCode')  # Expecting a list or None
-        # Mission Filters
+        school_codes = filters.get('schoolCode')
+        school_names = filters.get('school')
+        mobile_no = filters.get('mobile_no')
+        from_date = filters.get('from_date')
+        to_date = filters.get('to_date')
+        earn_coins = filters.get('earn_coins')
+        campaign_id = filters.get('campaign_id')
+
+        # Mission Filters (Legacy)
         mission_acceptance = filters.get('mission_acceptance')
         mission_requested_no = filters.get('mission_requested_no')
         mission_accepted_no = filters.get('mission_accepted_no')
-        # Quiz Filters
-        quiz_acceptance = filters.get('quiz_acceptance')
-        quiz_requested_no = filters.get('quiz_requested_no')
-        quiz_accepted_no = filters.get('quiz_accepted_no')
-        # Vision Filters
+
+        # Vision Filters (Legacy)
         vision_acceptance = filters.get('vision_acceptance')
         vision_requested_no = filters.get('vision_requested_no')
         vision_accepted_no = filters.get('vision_accepted_no')
-        # Coin Filter
-        earn_coins = filters.get('earn_coins')
-        # Date Filters
-        from_date = filters.get('from_date')
-        to_date = filters.get('to_date')
-        # Mobile Filter
-        mobile_no = filters.get('mobile_no')
-        # Campaign Filter
-        campaign_id = filters.get('campaign_id')  # This will be a string or None
-        # School Filter (Multi-select)
-        school_names = filters.get('school')  # Expecting a list or None from frontend
 
-        # --- Base SQL Query (CTE Part) ---
+        # Quiz Filters (Legacy)
+        quiz_acceptance = filters.get('quiz_acceptance')
+        quiz_requested_no = filters.get('quiz_requested_no')
+        quiz_accepted_no = filters.get('quiz_accepted_no')
+
+        # NEW: Pragya & Jigyasa Acceptance (Legacy-style)
+        pragya_acceptance = filters.get('pragya_acceptance')
+        jigyasa_acceptance = filters.get('jigyasa_acceptance')
+
+        # NEW: Status + Count Filters
+        vision_status = filters.get('vision_status')
+        vision_count = filters.get('vision_count')
+        mission_status = filters.get('mission_status')
+        mission_count = filters.get('mission_count')
+        jigyasa_status = filters.get('jigyasa_status')
+        jigyasa_count = filters.get('jigyasa_count')
+        pragya_status = filters.get('pragya_status')
+        pragya_count = filters.get('pragya_count')
+
+        # --- Base SQL with Enhanced CTE ---
         sql = """
-        WITH user_mission_stats AS (
+        WITH user_task_stats AS (
             SELECT
-                user_id,
-                COUNT(*) AS total_missions_requested,
-                SUM(CASE WHEN approved_at IS NOT NULL THEN 1 ELSE 0 END) AS total_missions_accepted
-            FROM lifeapp.la_mission_completes
-            GROUP BY user_id
+                mc.user_id,
+                -- Standard Missions (type = 1 or NULL)
+                COUNT(CASE WHEN m.type = 1 OR m.type IS NULL THEN 1 END) AS total_missions_requested,
+                SUM(CASE WHEN (m.type = 1 OR m.type IS NULL) AND mc.approved_at IS NOT NULL THEN 1 ELSE 0 END) AS total_missions_accepted,
+                -- Jigyasa (type = 5)
+                COUNT(CASE WHEN m.type = 5 THEN 1 END) AS total_jigyasa_requested,
+                SUM(CASE WHEN m.type = 5 AND mc.approved_at IS NOT NULL THEN 1 ELSE 0 END) AS total_jigyasa_accepted,
+                -- Pragya (type = 6)
+                COUNT(CASE WHEN m.type = 6 THEN 1 END) AS total_pragya_requested,
+                SUM(CASE WHEN m.type = 6 AND mc.approved_at IS NOT NULL THEN 1 ELSE 0 END) AS total_pragya_accepted
+            FROM lifeapp.la_mission_completes mc
+            LEFT JOIN lifeapp.la_missions m ON mc.la_mission_id = m.id
+            GROUP BY mc.user_id
         ),
         user_quiz_stats AS (
             SELECT
@@ -4276,7 +4349,7 @@ def search():
             SELECT
                 user_id,
                 COUNT(DISTINCT vision_id) AS total_visions_requested,
-                SUM(CASE WHEN approved_at IS NOT NULL THEN 1 ELSE 0 END) AS total_visions_accepted
+                SUM(CASE WHEN approved_at IS NOT NULL THEN 1 ELSE 0 END) AS total_visions_approved
             FROM lifeapp.vision_question_answers
             GROUP BY user_id
         ),
@@ -4285,17 +4358,20 @@ def search():
                 u.id, u.name, ls.name AS school_name, u.guardian_name, u.email, u.username,
                 u.mobile_no, u.dob, CASE WHEN u.type = 3 THEN 'Student' ELSE 'Unknown' END AS user_type,
                 u.grade, u.city, u.state, u.address, u.earn_coins, u.heart_coins, u.brain_coins,
-                u.school_id, u.school_code,
-                u.created_at,
-                COALESCE(ums.total_missions_requested, 0) AS total_missions_requested,
-                COALESCE(ums.total_missions_accepted, 0) AS total_missions_accepted,
+                u.school_id, u.school_code, u.created_at,
+                COALESCE(uts.total_missions_requested, 0) AS total_missions_requested,
+                COALESCE(uts.total_missions_accepted, 0) AS total_missions_accepted,
+                COALESCE(uts.total_jigyasa_requested, 0) AS total_jigyasa_requested,
+                COALESCE(uts.total_jigyasa_accepted, 0) AS total_jigyasa_accepted,
+                COALESCE(uts.total_pragya_requested, 0) AS total_pragya_requested,
+                COALESCE(uts.total_pragya_accepted, 0) AS total_pragya_accepted,
                 COALESCE(uqs.total_quizzes_requested, 0) AS total_quizzes_requested,
                 COALESCE(uqs.total_quizzes_accepted, 0) AS total_quizzes_accepted,
                 COALESCE(uvs.total_visions_requested, 0) AS total_visions_requested,
-                COALESCE(uvs.total_visions_accepted, 0) AS total_visions_accepted
+                COALESCE(uvs.total_visions_approved, 0) AS total_visions_accepted
             FROM users u
             LEFT JOIN lifeapp.schools ls ON u.school_id = ls.id
-            LEFT JOIN user_mission_stats ums ON u.id = ums.user_id
+            LEFT JOIN user_task_stats uts ON u.id = uts.user_id
             LEFT JOIN user_quiz_stats uqs ON u.id = uqs.user_id
             LEFT JOIN user_vision_stats uvs ON u.id = uvs.user_id
             WHERE u.type = 3
@@ -4304,28 +4380,19 @@ def search():
         main_sql = "SELECT * FROM cte WHERE 1=1"
         params = []
 
-        # --- Filter Conditions ---
-        # State Filter
+        # --- Existing Filters (Unchanged) ---
         if state:
             main_sql += " AND state = %s"
             params.append(state)
-
-        # City Filter
         if city:
             main_sql += " AND city = %s"
             params.append(city)
-
-        # Grade Filter
         if grade:
             main_sql += " AND grade = %s"
             params.append(grade)
-
-        # Mobile Filter
         if mobile_no:
             main_sql += " AND mobile_no = %s"
             params.append(mobile_no)
-
-        # School Filter Logic
         if school_codes and isinstance(school_codes, list) and len(school_codes) > 0:
             if len(school_codes) == 1:
                 main_sql += " AND school_code = %s"
@@ -4342,86 +4409,6 @@ def search():
                 placeholders = ','.join(['%s'] * len(school_names))
                 main_sql += f" AND school_name IN ({placeholders})"
                 params.extend(school_names)
-
-        # Mission Filters
-        if mission_acceptance is not None:
-            acceptance_value = str(mission_acceptance).strip().lower()
-            if acceptance_value == 'requested':
-                main_sql += " AND total_missions_requested > 0"
-            elif acceptance_value == 'approved':
-                main_sql += " AND total_missions_accepted > 0"
-            elif acceptance_value == 'rejected':
-                main_sql += " AND (total_missions_requested > 0 AND total_missions_accepted = 0)"
-
-        if mission_requested_no:
-            try:
-                mrn = int(mission_requested_no)
-                main_sql += " AND total_missions_requested >= %s"
-                params.append(mrn)
-            except ValueError:
-                logger.warning(f"Invalid mission_requested_no value: {mission_requested_no}")
-
-        if mission_accepted_no:
-            try:
-                man = int(mission_accepted_no)
-                main_sql += " AND total_missions_accepted >= %s"
-                params.append(man)
-            except ValueError:
-                logger.warning(f"Invalid mission_accepted_no value: {mission_accepted_no}")
-
-        # Quiz Filters
-        if quiz_acceptance is not None:
-            acceptance_value = str(quiz_acceptance).strip().lower()
-            if acceptance_value == 'requested':
-                main_sql += " AND total_quizzes_requested > 0"
-            elif acceptance_value == 'approved':
-                main_sql += " AND total_quizzes_accepted > 0"
-            elif acceptance_value == 'rejected':
-                main_sql += " AND (total_quizzes_requested > 0 AND total_quizzes_accepted = 0)"
-
-        if quiz_requested_no:
-            try:
-                qrn = int(quiz_requested_no)
-                main_sql += " AND total_quizzes_requested >= %s"
-                params.append(qrn)
-            except ValueError:
-                logger.warning(f"Invalid quiz_requested_no value: {quiz_requested_no}")
-
-        if quiz_accepted_no:
-            try:
-                qan = int(quiz_accepted_no)
-                main_sql += " AND total_quizzes_accepted >= %s"
-                params.append(qan)
-            except ValueError:
-                logger.warning(f"Invalid quiz_accepted_no value: {quiz_accepted_no}")
-
-        # Vision Filters
-        if vision_acceptance is not None:
-            acceptance_value = str(vision_acceptance).strip().lower()
-            if acceptance_value == 'requested':
-                main_sql += " AND total_visions_requested > 0"
-            elif acceptance_value == 'approved':
-                main_sql += " AND total_visions_accepted > 0"
-            elif acceptance_value == 'rejected':
-                main_sql += " AND (total_visions_requested > 0 AND total_visions_accepted = 0)"
-
-        if vision_requested_no:
-            try:
-                vrn = int(vision_requested_no)
-                main_sql += " AND total_visions_requested >= %s"
-                params.append(vrn)
-            except ValueError:
-                logger.warning(f"Invalid vision_requested_no value: {vision_requested_no}")
-
-        if vision_accepted_no:
-            try:
-                van = int(vision_accepted_no)
-                main_sql += " AND total_visions_accepted >= %s"
-                params.append(van)
-            except ValueError:
-                logger.warning(f"Invalid vision_accepted_no value: {vision_accepted_no}")
-
-        # Coin Filter
         if earn_coins:
             try:
                 coins = int(earn_coins)
@@ -4429,8 +4416,6 @@ def search():
                 params.append(coins)
             except ValueError:
                 logger.warning(f"Invalid earn_coins value: {earn_coins}")
-
-        # Date Filters
         if from_date:
             try:
                 from_dt = datetime.strptime(from_date, '%Y-%m-%d')
@@ -4438,7 +4423,6 @@ def search():
                 params.append(from_dt)
             except ValueError:
                 logger.warning(f"Invalid from_date format: {from_date}")
-
         if to_date:
             try:
                 to_dt = datetime.strptime(to_date, '%Y-%m-%d')
@@ -4448,41 +4432,118 @@ def search():
             except ValueError:
                 logger.warning(f"Invalid to_date format: {to_date}")
 
-        # --- Campaign Filter with Date Range ---
+        # --- Mission Acceptance (Legacy) ---
+        if mission_acceptance is not None:
+            acceptance_value = str(mission_acceptance).strip().lower()
+            if acceptance_value == 'requested':
+                main_sql += " AND total_missions_requested > 0"
+            elif acceptance_value == 'approved':
+                main_sql += " AND total_missions_accepted > 0"
+            elif acceptance_value == 'rejected':
+                main_sql += " AND (total_missions_requested > 0 AND total_missions_accepted = 0)"
+
+        # --- Vision Acceptance (Legacy) ---
+        if vision_acceptance is not None:
+            acceptance_value = str(vision_acceptance).strip().lower()
+            if acceptance_value == 'requested':
+                main_sql += " AND total_visions_requested > 0"
+            elif acceptance_value == 'approved':
+                main_sql += " AND total_visions_accepted > 0"
+            elif acceptance_value == 'rejected':
+                main_sql += " AND (total_visions_requested > 0 AND total_visions_accepted = 0)"
+
+        # --- Quiz Acceptance (Legacy) ---
+        if quiz_acceptance is not None:
+            acceptance_value = str(quiz_acceptance).strip().lower()
+            if acceptance_value == 'requested':
+                main_sql += " AND total_quizzes_requested > 0"
+            elif acceptance_value == 'approved':
+                main_sql += " AND total_quizzes_accepted > 0"
+            elif acceptance_value == 'rejected':
+                main_sql += " AND (total_quizzes_requested > 0 AND total_quizzes_accepted = 0)"
+
+        # --- NEW: Pragya & Jigyasa Acceptance ---
+        if pragya_acceptance is not None:
+            acceptance_value = str(pragya_acceptance).strip().lower()
+            if acceptance_value == 'accepted':
+                main_sql += " AND total_pragya_accepted > 0"
+            elif acceptance_value == 'rejected':
+                main_sql += " AND (total_pragya_requested > 0 AND total_pragya_accepted = 0)"
+
+        if jigyasa_acceptance is not None:
+            acceptance_value = str(jigyasa_acceptance).strip().lower()
+            if acceptance_value == 'accepted':
+                main_sql += " AND total_jigyasa_accepted > 0"
+            elif acceptance_value == 'rejected':
+                main_sql += " AND (total_jigyasa_requested > 0 AND total_jigyasa_accepted = 0)"
+
+        # --- Legacy Count Filters (Keep for compatibility) ---
+        def apply_legacy_count(col, val):
+            if val:
+                try:
+                    n = int(val)
+                    nonlocal main_sql, params
+                    main_sql += f" AND {col} >= %s"
+                    params.append(n)
+                except ValueError:
+                    logger.warning(f"Invalid count value: {val}")
+
+        apply_legacy_count('total_missions_requested', mission_requested_no)
+        apply_legacy_count('total_missions_accepted', mission_accepted_no)
+        apply_legacy_count('total_visions_requested', vision_requested_no)
+        apply_legacy_count('total_visions_accepted', vision_accepted_no)
+        apply_legacy_count('total_quizzes_requested', quiz_requested_no)
+        apply_legacy_count('total_quizzes_accepted', quiz_accepted_no)
+
+        # --- NEW: Status + Count Filters (Inlined to avoid UnboundLocalError) ---
+        status_count_pairs = [
+            ('total_visions_requested', 'total_visions_accepted', vision_status, vision_count),
+            ('total_missions_requested', 'total_missions_accepted', mission_status, mission_count),
+            ('total_jigyasa_requested', 'total_jigyasa_accepted', jigyasa_status, jigyasa_count),
+            ('total_pragya_requested', 'total_pragya_accepted', pragya_status, pragya_count)
+        ]
+
+        for col_req, col_acc, status, count_str in status_count_pairs:
+            if not status or not count_str:
+                continue
+            try:
+                count_val = int(count_str)
+            except ValueError:
+                logger.warning(f"Invalid count value: {count_str}")
+                continue
+            if status == 'requested':
+                main_sql += f" AND {col_req} >= %s"
+                params.append(count_val)
+            elif status == 'approved':
+                main_sql += f" AND {col_acc} >= %s"
+                params.append(count_val)
+            elif status == 'rejected':
+                main_sql += f" AND ({col_req} - {col_acc}) >= %s"
+                params.append(count_val)
+
+        # --- Campaign Filter (Unchanged) ---
         if campaign_id:
             logger.info(f"Processing campaign filter for campaign_id: {campaign_id}")
             try:
                 campaign_id_int = int(campaign_id)
-                
-                # Fetch campaign details including dates
                 cursor.execute("""
                     SELECT game_type, reference_id, scheduled_for, ended_at
                     FROM lifeapp.la_campaigns
                     WHERE id = %s
                 """, (campaign_id_int,))
                 campaign_details = cursor.fetchone()
-
-                if not campaign_details:
-                    logger.warning(f"Campaign ID {campaign_id_int} not found.")
-                else:
+                if campaign_details:
                     game_type = campaign_details['game_type']
                     reference_id = campaign_details['reference_id']
                     start_date = campaign_details['scheduled_for']
-                    
-                    # Handle end date - use current time if not set
                     end_date = campaign_details['ended_at'] or datetime.utcnow()
-                    
-                    # Convert to datetime objects if needed
                     if isinstance(start_date, str):
                         start_date = datetime.strptime(str(start_date), '%Y-%m-%d')
                     if isinstance(end_date, str):
                         end_date = datetime.strptime(str(end_date), '%Y-%m-%d %H:%M:%S')
-                    
-                    logger.info(f"Campaign dates: {start_date} to {end_date}")
-                    
-                    # Build subquery with date range filter
+
                     if game_type == 1:  # Mission
-                        campaign_filter_clause = """
+                        main_sql += """
                             AND id IN (
                                 SELECT DISTINCT user_id 
                                 FROM lifeapp.la_mission_completes 
@@ -4491,11 +4552,9 @@ def search():
                                     AND approved_at BETWEEN %s AND %s
                             )
                         """
-                        campaign_filter_params = [reference_id, start_date, end_date]
-                        logger.info(f"Filtering by Mission ID: {reference_id} with date range")
-
+                        params.extend([reference_id, start_date, end_date])
                     elif game_type == 2:  # Quiz
-                        campaign_filter_clause = """
+                        main_sql += """
                             AND id IN (
                                 SELECT DISTINCT user_id 
                                 FROM lifeapp.la_quiz_games 
@@ -4504,11 +4563,9 @@ def search():
                                     AND completed_at BETWEEN %s AND %s
                             )
                         """
-                        campaign_filter_params = [reference_id, start_date, end_date]
-                        logger.info(f"Filtering by Quiz Topic ID: {reference_id} with date range")
-
+                        params.extend([reference_id, start_date, end_date])
                     elif game_type == 7:  # Vision
-                        campaign_filter_clause = """
+                        main_sql += """
                             AND id IN (
                                 SELECT DISTINCT user_id 
                                 FROM lifeapp.vision_question_answers 
@@ -4517,32 +4574,14 @@ def search():
                                     AND created_at BETWEEN %s AND %s
                             )
                         """
-                        campaign_filter_params = [reference_id, start_date, end_date]
-                        logger.info(f"Filtering by Vision ID: {reference_id} with date range")
-
-                    else:
-                        logger.warning(f"Unsupported game_type {game_type}")
-                        campaign_filter_clause = ""
-                        campaign_filter_params = []
-
-                    if campaign_filter_clause:
-                        main_sql += campaign_filter_clause
-                        params.extend(campaign_filter_params)
-                        logger.debug(f"Added campaign filter: {campaign_filter_clause}")
-
-            except ValueError as e:
-                logger.error(f"Invalid campaign_id: {campaign_id}. Error: {e}")
-            except Exception as e:
+                        params.extend([reference_id, start_date, end_date])
+            except (ValueError, Exception) as e:
                 logger.error(f"Error processing campaign filter: {str(e)}")
 
-        # --- Final Query Execution ---
+        # --- Final Query ---
         final_sql = sql + main_sql + " ORDER BY id"
-        logger.debug(f"Final SQL Query: {final_sql}")
-        logger.debug(f"Final SQL Params: {params}")
-
         cursor.execute(final_sql, params)
         result = cursor.fetchall()
-
         logger.info(f"Search completed, returning {len(result)} records.")
         return jsonify(result), 200
 
@@ -4551,13 +4590,13 @@ def search():
         if connection:
             connection.rollback()
         return jsonify({"error": str(e)}), 500
-
     finally:
         if cursor:
             cursor.close()
         if connection:
             connection.close()
             
+                      
 @app.route('/api/demograph-students-dashboard', methods=['POST'])
 def get_demograph_students_dashboard():
     """
