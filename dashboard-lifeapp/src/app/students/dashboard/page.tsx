@@ -35,6 +35,7 @@ import {
   XCircle,
 } from "lucide-react";
 import error from "next/error";
+
 // =============== NEW: Weekly Label Formatter Utility ===============
 const formatWeeklyXAxisLabel = (value: string, currentGrouping: string) => {
   if (currentGrouping !== "weekly") return value;
@@ -276,8 +277,8 @@ function SearchableDropdown({
           {isLoading
             ? "Loading..."
             : value.length
-            ? `${value.length} selected`
-            : placeholder}
+              ? `${value.length} selected`
+              : placeholder}
         </span>
         <ChevronDown className="h-4 w-4 text-gray-500" />
       </div>
@@ -344,6 +345,7 @@ function SearchableDropdown({
     </div>
   );
 }
+
 // const api_startpoint = "http://localhost:5000";
 // const api_startpoint = 'https://lifeapp-api-vv1.vercel.app'
 // const api_startpoint = "http://152.42.239.141:5000";
@@ -482,8 +484,8 @@ export default function StudentDashboard() {
             typeof city === "string"
               ? city.trim()
               : city.city
-              ? city.city.trim()
-              : ""
+                ? city.city.trim()
+                : ""
           )
           .filter((city) => city !== "");
         setCities(cityList);
@@ -532,8 +534,8 @@ export default function StudentDashboard() {
             typeof city === "string"
               ? city.trim()
               : city.city
-              ? city.city.trim()
-              : ""
+                ? city.city.trim()
+                : ""
           )
           .filter((city) => city !== "");
         setAddCities(cityList);
@@ -573,8 +575,8 @@ export default function StudentDashboard() {
             typeof city === "string"
               ? city.trim()
               : city.city
-              ? city.city.trim()
-              : ""
+                ? city.city.trim()
+                : ""
           )
           .filter((city) => city !== "");
         setEditCities(cityList);
@@ -1750,10 +1752,10 @@ export default function StudentDashboard() {
       level === "level1"
         ? "Level 1: Grade 1–5"
         : level === "level2"
-        ? "Level 2: Grade 6+"
-        : level === "level3"
-        ? "Level 3: Grade 7+"
-        : "Level 4: Grade 8+",
+          ? "Level 2: Grade 6+"
+          : level === "level3"
+            ? "Level 3: Grade 7+"
+            : "Level 4: Grade 8+",
     type: "bar" as const,
     stack: "total" as const,
     data: EchartDataLevel.map((item) => item[`${level}_count`] || 0),
@@ -4127,9 +4129,9 @@ export default function StudentDashboard() {
                                     const percentage =
                                       totalChallenges > 0
                                         ? (
-                                            (row.count / totalChallenges) *
-                                            100
-                                          ).toFixed(3)
+                                          (row.count / totalChallenges) *
+                                          100
+                                        ).toFixed(3)
                                         : "0.00";
                                     return (
                                       <tr key={index}>
@@ -4179,7 +4181,7 @@ export default function StudentDashboard() {
                                     Page {currentChallengesPage + 1} of{" "}
                                     {Math.ceil(
                                       challengesData.length /
-                                        rowsPerPageChallenges
+                                      rowsPerPageChallenges
                                     ) || 1}
                                   </span>
                                 </div>
@@ -4188,14 +4190,14 @@ export default function StudentDashboard() {
                                   onClick={() =>
                                     setCurrentChallengesPage((prev) =>
                                       (prev + 1) * rowsPerPageChallenges <
-                                      challengesData.length
+                                        challengesData.length
                                         ? prev + 1
                                         : prev
                                     )
                                   }
                                   disabled={
                                     (currentChallengesPage + 1) *
-                                      rowsPerPageChallenges >=
+                                    rowsPerPageChallenges >=
                                     challengesData.length
                                   }
                                 >
@@ -4288,9 +4290,9 @@ export default function StudentDashboard() {
                                 const percentage =
                                   totalQuiz > 0
                                     ? (
-                                        (Number(row.count) / totalQuiz) *
-                                        100
-                                      ).toFixed(3)
+                                      (Number(row.count) / totalQuiz) *
+                                      100
+                                    ).toFixed(3)
                                     : "0.00";
                                 return (
                                   <tr key={index}>
@@ -5703,18 +5705,16 @@ export default function StudentDashboard() {
                   <div className="table-container">
                     {/* Scroll hints for visual indication */}
                     <button
-                      className={`scroll-hint-left ${
-                        !showLeftHint ? "scroll-hint-hidden" : ""
-                      }`}
+                      className={`scroll-hint-left ${!showLeftHint ? "scroll-hint-hidden" : ""
+                        }`}
                       onClick={() => scrollTableHorizontally("left")}
                       aria-label="Scroll left"
                     >
                       <IconChevronLeft size={24} />
                     </button>
                     <button
-                      className={`scroll-hint-right ${
-                        !showRightHint ? "scroll-hint-hidden" : ""
-                      }`}
+                      className={`scroll-hint-right ${!showRightHint ? "scroll-hint-hidden" : ""
+                        }`}
                       onClick={() => scrollTableHorizontally("right")}
                       aria-label="Scroll right"
                     >

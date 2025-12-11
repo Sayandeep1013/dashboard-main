@@ -28,10 +28,11 @@ interface CouponRedemption {
   "Coins Redeemed": number;
   user_id: number;
   "Coupon Redeemed Date": string;
+  status?: string; 
 }
 
 // const api_startpoint = "http://localhost:5000";
-// const api_startpoint = 'https://lifeapp-api-vv1.vercel.app'
+// const api_startpoint = 'https://lifeapp-api-vv1.vercel.app  '
 // const api_startpoint = "http://152.42.239.141:5000";
 // const api_startpoint = "http://152.42.239.141:5000";
 const api_startpoint = "https://admin-api.life-lab.org";
@@ -257,6 +258,10 @@ export default function TeacherCouponsRedeemed() {
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
   const [schoolCodeInput, setSchoolCodeInput] = useState("");
+
+  // ✅ Edit state for status
+  const [editingUserId, setEditingUserId] = useState<number | null>(null);
+  const [editStatusValue, setEditStatusValue] = useState<string>("Processing");
 
   // Fetch states
   useEffect(() => {
@@ -603,7 +608,7 @@ export default function TeacherCouponsRedeemed() {
 
   const exportToCSV = () => {
     const headers = [
-      "S.No.", // Added serial number header
+      "S.No.",
       "Teacher Name",
       "School Name",
       "Mobile Number",
@@ -622,7 +627,7 @@ export default function TeacherCouponsRedeemed() {
     const csvRows = [headers.join(",")];
     coupons.forEach((coupon, index) => {
       const row = [
-        index + 1, // Serial number
+        index + 1,
         coupon["Teacher Name"] || "",
         coupon["School Name"] || "",
         coupon["Mobile Number"] || "",
@@ -631,7 +636,7 @@ export default function TeacherCouponsRedeemed() {
         coupon.cluster || "",
         coupon.block || "",
         coupon.district || "",
-        (coupon as any).status || "",
+        coupon.status || "",
         coupon["School Code"] || "",
         coupon["Coupon Title"] || "",
         coupon["Coins Redeemed"] || "",
@@ -660,6 +665,45 @@ export default function TeacherCouponsRedeemed() {
     } catch (e) {
       return "";
     }
+  };
+
+  // ✅ Handlers for status edit
+  const startEdit = (user_id: number, currentStatus: string) => {
+    setEditingUserId(user_id);
+    setEditStatusValue(currentStatus || "Processing");
+  };
+
+  const saveStatus = async (user_id: number) => {
+    try {
+      const response = await fetch(
+        `${api_startpoint}/api/teacher_coupon_redeem_status_update`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ user_id, status: editStatusValue }),
+        }
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || "Failed to update status");
+      }
+
+      // Update local state
+      setCoupons((prev) =>
+        prev.map((c) =>
+          c.user_id === user_id ? { ...c, status: editStatusValue } : c
+        )
+      );
+      setEditingUserId(null);
+    } catch (err) {
+      console.error("Error saving teacher status:", err);
+      alert("Failed to update status. Please try again.");
+    }
+  };
+
+  const cancelEdit = () => {
+    setEditingUserId(null);
   };
 
   if (!isClient) {
@@ -942,7 +986,6 @@ export default function TeacherCouponsRedeemed() {
                     <table className="table table-vcenter table-hover">
                       <thead>
                         <tr>
-                          {/* Added serial number column */}
                           <th className="text-center">S.No.</th>
                           <th>Teacher Name</th>
                           <th>School Name</th>
@@ -963,7 +1006,6 @@ export default function TeacherCouponsRedeemed() {
                       <tbody>
                         {currentItems.length === 0 ? (
                           <tr>
-                            {/* Updated colspan to 15 for new column */}
                             <td colSpan={15} className="text-center">
                               No redemptions found
                             </td>
@@ -971,7 +1013,6 @@ export default function TeacherCouponsRedeemed() {
                         ) : (
                           currentItems.map((coupon, index) => (
                             <tr key={index}>
-                              {/* Added serial number cell */}
                               <td className="text-center">
                                 {indexOfFirstItem + index + 1}
                               </td>
@@ -983,7 +1024,57 @@ export default function TeacherCouponsRedeemed() {
                               <td>{coupon.cluster || "-"}</td>
                               <td>{coupon.block || "-"}</td>
                               <td>{coupon.district || "-"}</td>
-                              <td>{(coupon as any).status || "-"}</td>
+                              <td>
+                                {editingUserId === coupon.user_id ? (
+                                  <div className="d-flex align-items-center gap-2">
+                                    <select
+                                      value={editStatusValue}
+                                      onChange={(e) =>
+                                        setEditStatusValue(e.target.value)
+                                      }
+                                      className="form-select form-select-sm"
+                                      style={{ minWidth: "150px" }}
+                                    >
+                                      <option value="Processing">
+                                        Processing
+                                      </option>
+                                      <option value="Gift Card Sent">
+                                        Gift Card Sent
+                                      </option>
+                                      <option value="Product Sent">
+                                        Product Sent
+                                      </option>
+                                    </select>
+                                    <button
+                                      className="btn btn-success btn-sm"
+                                      onClick={() => saveStatus(coupon.user_id)}
+                                    >
+                                      Save
+                                    </button>
+                                    <button
+                                      className="btn btn-secondary btn-sm"
+                                      onClick={cancelEdit}
+                                    >
+                                      Cancel
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <>
+                                    {coupon.status || "Processing"}
+                                    <button
+                                      className="btn btn-outline-primary btn-sm ms-2"
+                                      onClick={() =>
+                                        startEdit(
+                                          coupon.user_id,
+                                          coupon.status || "Processing"
+                                        )
+                                      }
+                                    >
+                                      Edit
+                                    </button>
+                                  </>
+                                )}
+                              </td>
                               <td>{coupon["School Code"]}</td>
                               <td>{coupon["Coupon Title"]}</td>
                               <td>{coupon["Coins Redeemed"]}</td>
