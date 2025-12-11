@@ -2016,8 +2016,6 @@ def get_coupons_used_count():
     finally:
         connection.close()
 
-
-
 @app.route('/api/user-signups', methods=['GET'])
 def get_user_signups():
     try:
@@ -2043,6 +2041,7 @@ def get_user_signups():
 
 
 # ===========================  COUNT CARDS   ===========================
+
 
 @app.route('/api/user-count', methods=['POST'])
 def get_user_count():
@@ -2167,12 +2166,14 @@ def get_user_count():
 def get_total_points_earned():
     try:
         filters = request.get_json() or {}
+        logger.info(f"total-points-earned called with filters: {filters}")
         
         # STEP 1: Remove date-related keys before passing to build_filter_conditions
         filters_no_date = {
             k: v for k, v in filters.items()
             if k not in ('date_range', 'start_date', 'end_date')
         }
+        where_clause, params = build_filter_conditions(filters_no_date)
         
         # STEP 2: Build base WHERE clause for user demographics
         where_clause, params = build_filter_conditions(filters_no_date)
@@ -2238,12 +2239,20 @@ def get_total_points_earned():
             quiz_params.extend([filters['start_date'], filters['end_date']])
         
         # STEP 8: Execute both queries
+        logger.info(f"Executing mission query: {mission_sql} with params: {mission_params}")
         mission_result = execute_query(mission_sql, mission_params)
+
+        logger.info(f"Executing quiz query: {quiz_sql} with params: {quiz_params}")
         quiz_result = execute_query(quiz_sql, quiz_params)
         
         total_points = mission_result[0]['total_points'] if mission_result else 0
+        logger.info(f"Total mission points: {total_points}")
+
         total_coins = quiz_result[0]['total_coins'] if quiz_result else 0
+        logger.info(f"Total quiz coins: {total_coins}")
+
         combined_total = int(total_points + total_coins)
+        logger.info(f"Combined total points earned: {combined_total}")
         
         return jsonify({"total_points": combined_total}), 200
         
@@ -3596,14 +3605,7 @@ def get_total_vision_completes():
         return jsonify({'error': str(e)}), 500   
 
 
-
-
-
-
-
-
 # ============ Helper Functions and Endpoints ============
-
 
 
 @app.route('/api/active-user-count', methods = ['GET', 'POST'])
@@ -5564,6 +5566,34 @@ def fetch_coupon_redeem_list():
     finally:
         connection.close()
 
+@app.route('/api/student_coupon_redeem_status_update', methods=['POST'])
+def update_coupon_redeem_status():
+    try:
+        data = request.get_json()
+        user_id = data.get('user_id')
+        new_status = data.get('status')
+
+        if not user_id or new_status not in ['Processing', 'Gift Card Sent', 'Product Sent']:
+            return jsonify({'error': 'Invalid user_id or status'}), 400
+
+        connection = get_db_connection()
+        with connection.cursor() as cursor:
+            # Update status and status_updated_at
+            cursor.execute("""
+                UPDATE lifeapp.coupon_redeems 
+                SET status = %s, status_updated_at = NOW() 
+                WHERE user_id = %s
+            """, (new_status, user_id))
+            if cursor.rowcount == 0:
+                return jsonify({'error': 'No redemption found for this user'}), 404
+            connection.commit()
+        return jsonify({'success': True, 'user_id': user_id, 'status': new_status})
+    except Exception as e:
+        app.logger.error(f"Error updating status: {e}")
+        return jsonify({'error': str(e)}), 500
+    finally:
+        connection.close()
+
 @app.route('/api/student_school_codes', methods=['GET'])
 def student_school_codes():
     try:
@@ -6041,8 +6071,6 @@ def update_mission_status():
 ######################## STUDENT/ VISION APIs ####################################
 ###################################################################################
 ###################################################################################
-
-
 
 def notify_vision_status(vision_id, user_id, status):
     """Helper function to notify vision status via API"""
@@ -8034,6 +8062,38 @@ def teacher_school_codes():
     finally:
         connection.close()
 
+@app.route('/api/teacher_coupon_redeem_status_update', methods=['POST'])
+def update_teacher_coupon_redeem_status():
+    try:
+        data = request.get_json()
+        user_id = data.get('user_id')
+        new_status = data.get('status')
+
+        if not user_id or new_status not in ['Processing', 'Gift Card Sent', 'Product Sent']:
+            return jsonify({'error': 'Invalid user_id or status'}), 400
+
+        connection = get_db_connection()
+        with connection.cursor() as cursor:
+            # Update status in coupon_redeems (same table used for teachers & students)
+            cursor.execute("""
+                UPDATE lifeapp.coupon_redeems 
+                SET status = %s 
+                WHERE user_id = %s
+            """, (new_status, user_id))
+            
+            if cursor.rowcount == 0:
+                return jsonify({'error': 'No redemption found for this teacher'}), 404
+                
+            connection.commit()
+        
+        return jsonify({'success': True, 'user_id': user_id, 'status': new_status})
+    except Exception as e:
+        app.logger.error(f"Error updating teacher coupon status: {e}")
+        return jsonify({'error': str(e)}), 500
+    finally:
+        connection.close()
+
+        
 ###################################################################################
 ###################################################################################
 ######################## TEACHER / CONCEPT CARTOON APIs ###########################
