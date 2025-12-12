@@ -2166,23 +2166,45 @@ def get_user_count():
 def get_total_points_earned():
     try:
         filters = request.get_json() or {}
-        logger.info(f"total-points-earned called with filters: {filters}")
+        logger.info(f"--- API CALL: total-points-earned ---")
+        logger.info(f"Incoming Filters: {filters}")
         
-        # STEP 1: Remove date-related keys before passing to build_filter_conditions
+        # STEP 1: Remove date-related keys
         filters_no_date = {
             k: v for k, v in filters.items()
             if k not in ('date_range', 'start_date', 'end_date')
         }
-        where_clause, params = build_filter_conditions(filters_no_date)
         
-        # STEP 2: Build base WHERE clause for user demographics
+        # STEP 2: Build base WHERE clause
         where_clause, params = build_filter_conditions(filters_no_date)
+        logger.info(f"Base WHERE clause (Before Alias Fix): {where_clause}")
         
-        # STEP 3: Fix ambiguous column references by prefixing with 'u.'
+        # STEP 3: Fix ambiguous column references (Robust Method)
+        # This handles cases like 'type NOT IN', 'type IS NULL', etc.
+        
+        # First, specific fix for manual string injections if any
         if "type != 3" in where_clause:
             where_clause = where_clause.replace("type != 3", "u.type != 3")
-        for field in ['state', 'city', 'school_code', 'type', 'grade', 'gender']:
+            
+        fields_to_fix = ['state', 'city', 'school_code', 'type', 'grade', 'gender']
+        
+        for field in fields_to_fix:
+            # We must handle various SQL operators carefully
+            # 1. Equals
             where_clause = where_clause.replace(f"{field} =", f"u.{field} =")
+            # 2. Not Equals
+            where_clause = where_clause.replace(f"{field} !=", f"u.{field} !=")
+            # 3. IS NULL / IS NOT NULL
+            where_clause = where_clause.replace(f"{field} IS", f"u.{field} IS")
+            # 4. NOT IN (...)
+            where_clause = where_clause.replace(f"{field} NOT IN", f"u.{field} NOT IN")
+            # 5. IN (...) - Space before field ensures we don't match 'u.field' again
+            where_clause = where_clause.replace(f" {field} IN", f" u.{field} IN")
+            # 6. Handle case where "field IN" is at the very start of the string
+            if where_clause.startswith(f"{field} IN"):
+                 where_clause = f"u.{where_clause}"
+
+        logger.info(f"Final WHERE clause (After Alias Fix): {where_clause}")
         
         # STEP 4: Mission Points Query
         mission_sql = f"""
@@ -2195,21 +2217,24 @@ def get_total_points_earned():
         mission_params = params.copy()
         
         # STEP 5: Apply date filter on lamc.created_at
+        date_sql_mission = ""
         if filters.get('date_range') and filters['date_range'] != 'All':
             dr = filters['date_range']
             if dr == 'last7days':
-                mission_sql += " AND lamc.created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)"
+                date_sql_mission = " AND lamc.created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)"
             elif dr == 'last30days':
-                mission_sql += " AND lamc.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)"
+                date_sql_mission = " AND lamc.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)"
             elif dr == 'last3months':
-                mission_sql += " AND lamc.created_at >= DATE_SUB(NOW(), INTERVAL 3 MONTH)"
+                date_sql_mission = " AND lamc.created_at >= DATE_SUB(NOW(), INTERVAL 3 MONTH)"
             elif dr == 'last6months':
-                mission_sql += " AND lamc.created_at >= DATE_SUB(NOW(), INTERVAL 6 MONTH)"
+                date_sql_mission = " AND lamc.created_at >= DATE_SUB(NOW(), INTERVAL 6 MONTH)"
             elif dr == 'lastyear':
-                mission_sql += " AND lamc.created_at >= DATE_SUB(NOW(), INTERVAL 1 YEAR)"
+                date_sql_mission = " AND lamc.created_at >= DATE_SUB(NOW(), INTERVAL 1 YEAR)"
         elif filters.get('start_date') and filters.get('end_date'):
-            mission_sql += " AND lamc.created_at BETWEEN %s AND %s"
+            date_sql_mission = " AND lamc.created_at BETWEEN %s AND %s"
             mission_params.extend([filters['start_date'], filters['end_date']])
+            
+        mission_sql += date_sql_mission
         
         # STEP 6: Quiz Coins Query
         quiz_sql = f"""
@@ -2222,44 +2247,47 @@ def get_total_points_earned():
         quiz_params = params.copy()
         
         # STEP 7: Apply date filter on lqgr.created_at
+        date_sql_quiz = ""
         if filters.get('date_range') and filters['date_range'] != 'All':
             dr = filters['date_range']
             if dr == 'last7days':
-                quiz_sql += " AND lqgr.created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)"
+                date_sql_quiz = " AND lqgr.created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)"
             elif dr == 'last30days':
-                quiz_sql += " AND lqgr.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)"
+                date_sql_quiz = " AND lqgr.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)"
             elif dr == 'last3months':
-                quiz_sql += " AND lqgr.created_at >= DATE_SUB(NOW(), INTERVAL 3 MONTH)"
+                date_sql_quiz = " AND lqgr.created_at >= DATE_SUB(NOW(), INTERVAL 3 MONTH)"
             elif dr == 'last6months':
-                quiz_sql += " AND lqgr.created_at >= DATE_SUB(NOW(), INTERVAL 6 MONTH)"
+                date_sql_quiz = " AND lqgr.created_at >= DATE_SUB(NOW(), INTERVAL 6 MONTH)"
             elif dr == 'lastyear':
-                quiz_sql += " AND lqgr.created_at >= DATE_SUB(NOW(), INTERVAL 1 YEAR)"
+                date_sql_quiz = " AND lqgr.created_at >= DATE_SUB(NOW(), INTERVAL 1 YEAR)"
         elif filters.get('start_date') and filters.get('end_date'):
-            quiz_sql += " AND lqgr.created_at BETWEEN %s AND %s"
+            date_sql_quiz = " AND lqgr.created_at BETWEEN %s AND %s"
             quiz_params.extend([filters['start_date'], filters['end_date']])
+            
+        quiz_sql += date_sql_quiz
         
         # STEP 8: Execute both queries
-        logger.info(f"Executing mission query: {mission_sql} with params: {mission_params}")
+        logger.info(f"Executing Mission SQL...")
         mission_result = execute_query(mission_sql, mission_params)
-
-        logger.info(f"Executing quiz query: {quiz_sql} with params: {quiz_params}")
+        
+        logger.info(f"Executing Quiz SQL...")
         quiz_result = execute_query(quiz_sql, quiz_params)
         
         total_points = mission_result[0]['total_points'] if mission_result else 0
-        logger.info(f"Total mission points: {total_points}")
-
         total_coins = quiz_result[0]['total_coins'] if quiz_result else 0
-        logger.info(f"Total quiz coins: {total_coins}")
+        
+        logger.info(f"Results -> Mission Points: {total_points}, Quiz Coins: {total_coins}")
 
         combined_total = int(total_points + total_coins)
-        logger.info(f"Combined total points earned: {combined_total}")
         
         return jsonify({"total_points": combined_total}), 200
         
     except Exception as e:
-        logger.error(f"Error in total-points-earned: {str(e)}")
+        logger.error(f"CRITICAL ERROR in total-points-earned: {str(e)}")
+        # It's helpful to print the error to console too
+        print(f"Error: {e}")
         return jsonify({"error": str(e)}), 500
-           
+          
 @app.route('/api/total-points-redeemed', methods=['POST'])
 def get_total_points_redeemed():
     try:

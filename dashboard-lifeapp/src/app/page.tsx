@@ -5,7 +5,7 @@ import { useState, useEffect, useRef } from "react";
 import NumberFlow from "@number-flow/react";
 import LogoutButton from "@/components/logoutButton";
 import Papa from "papaparse";
-import React, { forwardRef } from 'react';
+import React, { forwardRef } from "react";
 import * as XLSX from "xlsx";
 import {
   AreaChart,
@@ -93,16 +93,13 @@ import { Sidebar } from "@/components/ui/sidebar";
 import { Inter } from "next/font/google";
 const inter = Inter({ subsets: ["latin"] });
 
-
 // const api_startpoint = "http://localhost:5000";
 // const api_startpoint = 'https://lifeapp-api-vv1.vercel.app'
 // const api_startpoint = "http://152.42.239.141:5000";
 // const api_startpoint = "http://152.42.239.141:5000";
 const api_startpoint = "https://admin-api.life-lab.org";
 
-
-
-import { formatWeeklyXAxisLabel } from '@/components/ui/echartsHelpers';
+import { formatWeeklyXAxisLabel } from "@/components/ui/echartsHelpers";
 interface userTypeChart {
   count: number;
   userType: string | null;
@@ -230,12 +227,17 @@ const ChartSkeleton = () => (
 );
 // Lazy Chart Component with Intersection Observer
 // Update the LazyChart component to handle errors better
-const LazyChart = forwardRef<ReactECharts, {
-  option: any;
-  style?: React.CSSProperties;
-  loading: boolean;
-  id?: string;
-}>(({ option, style, loading, id = `chart-${Math.random().toString(36).substr(2, 9)}` }, ref) => {
+const LazyChart = forwardRef<
+  ReactECharts,
+  {
+    option: any;
+    style?: React.CSSProperties;
+    loading: boolean;
+    id?: string;
+  }
+>(({ option, style, loading, id = `chart-${Math.random()
+    .toString(36)
+    .substr(2, 9)}` }, ref) => {
   const [isVisible, setIsVisible] = useState(false);
   const [hasBeenVisible, setHasBeenVisible] = useState(false);
   const [chartError, setChartError] = useState<string | null>(null);
@@ -264,7 +266,7 @@ const LazyChart = forwardRef<ReactECharts, {
   };
   const onChartError = (error: any) => {
     console.error(`Chart ${id} error:`, error);
-    setChartError('Failed to render chart');
+    setChartError("Failed to render chart");
   };
   return (
     <div ref={chartRef} id={id}>
@@ -281,20 +283,20 @@ const LazyChart = forwardRef<ReactECharts, {
           </div>
         </div>
       ) : (
-        <ReactECharts 
+        <ReactECharts
           ref={ref}
-          option={option} 
+          option={option}
           style={style}
           onChartReady={onChartReady}
           onEvents={{
-            'error': onChartError
+            error: onChartError,
           }}
         />
       )}
     </div>
   );
 });
-LazyChart.displayName = 'LazyChart';
+LazyChart.displayName = "LazyChart";
 // Helper to safely build query string
 const toQueryString = (obj: Record<string, any>) => {
   const params = new URLSearchParams();
@@ -879,8 +881,11 @@ export default function UserAnalyticsDashboard() {
         loadDetailedAnalytics(),
         loadAdditionalMetrics(),
       ]);
+      // After data is loaded, stop the applying spinner
+      setApplyingFilters(false);
     } catch (error) {
       console.error("Error loading dashboard data:", error);
+      setApplyingFilters(false);
     } finally {
       setGlobalLoading(false);
     }
@@ -5355,12 +5360,16 @@ export default function UserAnalyticsDashboard() {
     XLSX.writeFile(workbook, filename);
   };
   // Apply filters handler with loading state
-  const handleApplyFilters = async () => {
+  const handleApplyFilters = () => {
+    // 1. Set the loading state for the UI
     setApplyingFilters(true);
+
+    // 2. Update the state. This triggers the existing useEffect, which will call loadDashboardData().
     setAppliedFilters({ ...globalFilters });
-    // Wait for data to reload
-    await loadDashboardData();
-    setApplyingFilters(false); // Reset after done
+
+    // Note: We are deliberately NOT calling loadDashboardData() here.
+    // The useEffect listening to [appliedFilters] will handle the data fetch.
+    // This prevents the Race Condition where two requests are sent simultaneously.
   };
   return (
     <div className={`page bg-light ${inter.className} font-sans`}>
@@ -6652,29 +6661,31 @@ export default function UserAnalyticsDashboard() {
                         Download
                       </button>
                     </div>
-                    <div style={{ marginBottom: "20px" }}>
-                      <label htmlFor="points-grouping">Group by:</label>
-                      <select
-                        id="points-grouping"
-                        value={pointsMissionGrouping}
-                        onChange={(e) =>
-                          setPointsMissionGrouping(e.target.value as any)
-                        }
-                        className="border rounded p-1"
-                      >
-                        {[
-                          "daily",
-                          "weekly",
-                          "monthly",
-                          "quarterly",
-                          "yearly",
-                          "lifetime",
-                        ].map((g) => (
-                          <option key={g} value={g}>
-                            {g.charAt(0).toUpperCase() + g.slice(1)}
-                          </option>
-                        ))}
-                      </select>
+                    <div className="card-body">
+                      <div style={{ marginBottom: "20px" }}>
+                        <label htmlFor="points-grouping">Group by:</label>
+                        <select
+                          id="points-grouping"
+                          value={pointsMissionGrouping}
+                          onChange={(e) =>
+                            setPointsMissionGrouping(e.target.value as any)
+                          }
+                          className="border rounded p-1"
+                        >
+                          {[
+                            "daily",
+                            "weekly",
+                            "monthly",
+                            "quarterly",
+                            "yearly",
+                            "lifetime",
+                          ].map((g) => (
+                            <option key={g} value={g}>
+                              {g.charAt(0).toUpperCase() + g.slice(1)}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
                       {pointsMissionLoading ? (
                         <div className="text-center">
                           <div
@@ -6694,6 +6705,7 @@ export default function UserAnalyticsDashboard() {
                     </div>
                   </div>
                 </div>
+
                 {/* Quiz Coins Earned Over Time */}
                 <div className="col-12 col-xl-6">
                   <div className="card shadow-sm border-0 h-100">
@@ -6724,42 +6736,45 @@ export default function UserAnalyticsDashboard() {
                         Download
                       </button>
                     </div>
-                    <div style={{ marginBottom: "20px" }}>
-                      <label htmlFor="quiz-points-grouping">
-                        Time Grouping:{" "}
-                      </label>
-                      <select
-                        id="quiz-points-grouping"
-                        value={pointsQuizGrouping}
-                        onChange={(e) =>
-                          setPointsQuizGrouping(e.target.value as any)
-                        }
-                      >
-                        {groupings.map((g) => (
-                          <option key={g} value={g}>
-                            {g.charAt(0).toUpperCase() + g.slice(1)}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    {pointsQuizLoading ? (
-                      <div className="text-center">
-                        <div
-                          className="spinner-border text-purple"
-                          role="status"
-                          style={{ width: "8rem", height: "8rem" }}
-                        ></div>
+                    <div className="card-body">
+                      <div style={{ marginBottom: "20px" }}>
+                        <label htmlFor="quiz-points-grouping">
+                          Time Grouping:{" "}
+                        </label>
+                        <select
+                          id="quiz-points-grouping"
+                          value={pointsQuizGrouping}
+                          onChange={(e) =>
+                            setPointsQuizGrouping(e.target.value as any)
+                          }
+                        >
+                          {groupings.map((g) => (
+                            <option key={g} value={g}>
+                              {g.charAt(0).toUpperCase() + g.slice(1)}
+                            </option>
+                          ))}
+                        </select>
                       </div>
-                    ) : (
-                      <LazyChart
-                        ref={chartRef18}
-                        option={pointsQuizChartOption}
-                        style={{ height: "400px", width: "100%" }}
-                        loading={pointsQuizLoading || loadingPhase3}
-                      />
-                    )}
+                      {pointsQuizLoading ? (
+                        <div className="text-center">
+                          <div
+                            className="spinner-border text-purple"
+                            role="status"
+                            style={{ width: "8rem", height: "8rem" }}
+                          ></div>
+                        </div>
+                      ) : (
+                        <LazyChart
+                          ref={chartRef18}
+                          option={pointsQuizChartOption}
+                          style={{ height: "400px", width: "100%" }}
+                          loading={pointsQuizLoading || loadingPhase3}
+                        />
+                      )}
+                    </div>
                   </div>
                 </div>
+
                 {/* Jigyasa Coins Earned Over Time */}
                 <div className="col-12 col-xl-6">
                   <div className="card shadow-sm border-0 h-100">
@@ -6794,29 +6809,33 @@ export default function UserAnalyticsDashboard() {
                         Download
                       </button>
                     </div>
-                    <div style={{ marginBottom: "20px" }}>
-                      <label htmlFor="points-jigyasa-grouping">Group by:</label>
-                      <select
-                        id="points-jigyasa-grouping"
-                        value={pointsJigyasaGrouping}
-                        onChange={(e) =>
-                          setPointsJigyasaGrouping(e.target.value as any)
-                        }
-                        className="border rounded p-1"
-                      >
-                        {[
-                          "daily",
-                          "weekly",
-                          "monthly",
-                          "quarterly",
-                          "yearly",
-                          "lifetime",
-                        ].map((g) => (
-                          <option key={g} value={g}>
-                            {g.charAt(0).toUpperCase() + g.slice(1)}
-                          </option>
-                        ))}
-                      </select>
+                    <div className="card-body">
+                      <div style={{ marginBottom: "20px" }}>
+                        <label htmlFor="points-jigyasa-grouping">
+                          Group by:
+                        </label>
+                        <select
+                          id="points-jigyasa-grouping"
+                          value={pointsJigyasaGrouping}
+                          onChange={(e) =>
+                            setPointsJigyasaGrouping(e.target.value as any)
+                          }
+                          className="border rounded p-1"
+                        >
+                          {[
+                            "daily",
+                            "weekly",
+                            "monthly",
+                            "quarterly",
+                            "yearly",
+                            "lifetime",
+                          ].map((g) => (
+                            <option key={g} value={g}>
+                              {g.charAt(0).toUpperCase() + g.slice(1)}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
                       {pointsJigyasaLoading ? (
                         <div className="text-center">
                           <div
@@ -6836,6 +6855,7 @@ export default function UserAnalyticsDashboard() {
                     </div>
                   </div>
                 </div>
+
                 {/* Pragya Coins Earned Over Time */}
                 <div className="col-12 col-xl-6">
                   <div className="card shadow-sm border-0 h-100">
@@ -6870,29 +6890,33 @@ export default function UserAnalyticsDashboard() {
                         Download
                       </button>
                     </div>
-                    <div style={{ marginBottom: "20px" }}>
-                      <label htmlFor="points-pragya-grouping">Group by:</label>
-                      <select
-                        id="points-pragya-grouping"
-                        value={pointsPragyaGrouping}
-                        onChange={(e) =>
-                          setPointsPragyaGrouping(e.target.value as any)
-                        }
-                        className="border rounded p-1"
-                      >
-                        {[
-                          "daily",
-                          "weekly",
-                          "monthly",
-                          "quarterly",
-                          "yearly",
-                          "lifetime",
-                        ].map((g) => (
-                          <option key={g} value={g}>
-                            {g.charAt(0).toUpperCase() + g.slice(1)}
-                          </option>
-                        ))}
-                      </select>
+                    <div className="card-body">
+                      <div style={{ marginBottom: "20px" }}>
+                        <label htmlFor="points-pragya-grouping">
+                          Group by:
+                        </label>
+                        <select
+                          id="points-pragya-grouping"
+                          value={pointsPragyaGrouping}
+                          onChange={(e) =>
+                            setPointsPragyaGrouping(e.target.value as any)
+                          }
+                          className="border rounded p-1"
+                        >
+                          {[
+                            "daily",
+                            "weekly",
+                            "monthly",
+                            "quarterly",
+                            "yearly",
+                            "lifetime",
+                          ].map((g) => (
+                            <option key={g} value={g}>
+                              {g.charAt(0).toUpperCase() + g.slice(1)}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
                       {pointsPragyaLoading ? (
                         <div className="text-center">
                           <div
@@ -6912,6 +6936,7 @@ export default function UserAnalyticsDashboard() {
                     </div>
                   </div>
                 </div>
+
                 {/* Vision Score Earned Over Time */}
                 <div className="col-12 col-xl-6">
                   <div className="card shadow-sm border-0 h-100">
@@ -6946,20 +6971,22 @@ export default function UserAnalyticsDashboard() {
                         Download
                       </button>
                     </div>
-                    <div style={{ marginBottom: "20px" }}>
-                      <select
-                        value={groupingVisionScore}
-                        onChange={(e) =>
-                          setGroupingVisionScore(e.target.value as any)
-                        }
-                      >
-                        <option value="daily">Daily</option>
-                        <option value="weekly">Weekly</option>
-                        <option value="monthly">Monthly</option>
-                        <option value="quarterly">Quarterly</option>
-                        <option value="yearly">Yearly</option>
-                        <option value="lifetime">Lifetime</option>
-                      </select>
+                    <div className="card-body">
+                      <div style={{ marginBottom: "20px" }}>
+                        <select
+                          value={groupingVisionScore}
+                          onChange={(e) =>
+                            setGroupingVisionScore(e.target.value as any)
+                          }
+                        >
+                          <option value="daily">Daily</option>
+                          <option value="weekly">Weekly</option>
+                          <option value="monthly">Monthly</option>
+                          <option value="quarterly">Quarterly</option>
+                          <option value="yearly">Yearly</option>
+                          <option value="lifetime">Lifetime</option>
+                        </select>
+                      </div>
                       {VisionScoreLoading ? (
                         <div className="text-center">
                           <div
@@ -6979,6 +7006,7 @@ export default function UserAnalyticsDashboard() {
                     </div>
                   </div>
                 </div>
+
                 {/* Coupons Redeemed Over Time */}
                 <div className="col-12 col-xl-6">
                   <div className="card shadow-sm border-0 h-100">
@@ -7013,31 +7041,33 @@ export default function UserAnalyticsDashboard() {
                         Download
                       </button>
                     </div>
-                    <div style={{ marginBottom: "20px" }}>
-                      <label htmlFor="points-couponRedeems-grouping">
-                        Group by:
-                      </label>
-                      <select
-                        id="points-couponRedeems-grouping"
-                        value={couponRedeemsGrouping}
-                        onChange={(e) =>
-                          setCouponRedeemsGrouping(e.target.value as any)
-                        }
-                        className="border rounded p-1"
-                      >
-                        {[
-                          "daily",
-                          "weekly",
-                          "monthly",
-                          "quarterly",
-                          "yearly",
-                          "lifetime",
-                        ].map((g) => (
-                          <option key={g} value={g}>
-                            {g.charAt(0).toUpperCase() + g.slice(1)}
-                          </option>
-                        ))}
-                      </select>
+                    <div className="card-body">
+                      <div style={{ marginBottom: "20px" }}>
+                        <label htmlFor="points-couponRedeems-grouping">
+                          Group by:
+                        </label>
+                        <select
+                          id="points-couponRedeems-grouping"
+                          value={couponRedeemsGrouping}
+                          onChange={(e) =>
+                            setCouponRedeemsGrouping(e.target.value as any)
+                          }
+                          className="border rounded p-1"
+                        >
+                          {[
+                            "daily",
+                            "weekly",
+                            "monthly",
+                            "quarterly",
+                            "yearly",
+                            "lifetime",
+                          ].map((g) => (
+                            <option key={g} value={g}>
+                              {g.charAt(0).toUpperCase() + g.slice(1)}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
                       {couponRedeemsLoading ? (
                         <div className="text-center">
                           <div
@@ -7057,6 +7087,7 @@ export default function UserAnalyticsDashboard() {
                     </div>
                   </div>
                 </div>
+
                 {/* PBL submissions Over Time */}
                 <div className="col-12 col-xl-6">
                   <div className="card shadow-sm border-0 h-100">
@@ -7091,33 +7122,35 @@ export default function UserAnalyticsDashboard() {
                         Download
                       </button>
                     </div>
-                    <div style={{ marginBottom: "20px" }}>
-                      <label className="ml-2">
-                        Grouping:
-                        <select
-                          value={groupingPBL}
-                          onChange={(e) => setGroupingPBL(e.target.value)}
-                        >
-                          {PBLgroupings.map((g) => (
-                            <option key={g} value={g}>
-                              {g}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                      <label className="ml-2">
-                        Status:
-                        <select
-                          value={statusPBL}
-                          onChange={(e) => setStatusPBL(e.target.value)}
-                        >
-                          {statusOptionsPBL.map((s) => (
-                            <option key={s} value={s}>
-                              {s}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
+                    <div className="card-body">
+                      <div style={{ marginBottom: "20px" }}>
+                        <label className="ml-2">
+                          Grouping:
+                          <select
+                            value={groupingPBL}
+                            onChange={(e) => setGroupingPBL(e.target.value)}
+                          >
+                            {PBLgroupings.map((g) => (
+                              <option key={g} value={g}>
+                                {g}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <label className="ml-2">
+                          Status:
+                          <select
+                            value={statusPBL}
+                            onChange={(e) => setStatusPBL(e.target.value)}
+                          >
+                            {statusOptionsPBL.map((s) => (
+                              <option key={s} value={s}>
+                                {s}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      </div>
                       {loadingPBL ? (
                         <div className="text-center">
                           <div
@@ -7137,6 +7170,7 @@ export default function UserAnalyticsDashboard() {
                     </div>
                   </div>
                 </div>
+
                 {/* Student Grade Distribution table */}
                 <div className="col-12 col-xl-6">
                   <div className="card shadow-sm border-0 h-100">
@@ -7207,6 +7241,7 @@ export default function UserAnalyticsDashboard() {
                     )}
                   </div>
                 </div>
+
                 {/* Teachers by Grade Distribution table */}
                 <div className="col-12 col-xl-6">
                   <div className="card shadow-sm border-0 h-100">
@@ -7280,6 +7315,7 @@ export default function UserAnalyticsDashboard() {
                     )}
                   </div>
                 </div>
+
                 {/* Student Demographics Distribution graph */}
                 <div className="col-12 col-xl-6">
                   <div className="card shadow-sm border-0 h-100">
@@ -7555,73 +7591,79 @@ export default function UserAnalyticsDashboard() {
                         Download
                       </button>
                     </div>
-                    <div style={{ marginBottom: "20px" }}>
-                      <label htmlFor="school-grouping-select">Grouping:</label>
-                      <select
-                        id="school-grouping-select"
-                        value={schoolGrouping}
-                        onChange={(e) => setSchoolGrouping(e.target.value)}
-                        className="mr-2"
-                      >
-                        {groupings.map((g) => (
-                          <option key={g} value={g}>
-                            {g.charAt(0).toUpperCase() + g.slice(1)}
-                          </option>
-                        ))}
-                      </select>
-                      <label htmlFor="school-state-select">State:</label>
-                      <select
-                        id="school-state-select"
-                        value={selectedSchoolState}
-                        onChange={(e) => setSelectedSchoolState(e.target.value)}
-                      >
-                        <option value="">All States</option>
-                        {allStates.map((state) => (
-                          <option key={state} value={state}>
-                            {state}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    {schoolLoading ? (
-                      <div className="text-center">
-                        <div
-                          className="spinner-border text-purple"
-                          role="status"
-                          style={{ width: "8rem", height: "8rem" }}
-                        ></div>
+                    <div className="card-body">
+                      <div style={{ marginBottom: "20px" }}>
+                        <label htmlFor="school-grouping-select">
+                          Grouping:
+                        </label>
+                        <select
+                          id="school-grouping-select"
+                          value={schoolGrouping}
+                          onChange={(e) => setSchoolGrouping(e.target.value)}
+                          className="mr-2"
+                        >
+                          {groupings.map((g) => (
+                            <option key={g} value={g}>
+                              {g.charAt(0).toUpperCase() + g.slice(1)}
+                            </option>
+                          ))}
+                        </select>
+                        <label htmlFor="school-state-select">State:</label>
+                        <select
+                          id="school-state-select"
+                          value={selectedSchoolState}
+                          onChange={(e) =>
+                            setSelectedSchoolState(e.target.value)
+                          }
+                        >
+                          <option value="">All States</option>
+                          {allStates.map((state) => (
+                            <option key={state} value={state}>
+                              {state}
+                            </option>
+                          ))}
+                        </select>
                       </div>
-                    ) : (
-                      <LazyChart
-                        ref={chartRef16}
-                        option={{
-                          ...chartOptionSchool,
-                          xAxis: {
-                            ...chartOptionSchool.xAxis,
-                            axisLabel: {
-                              rotate: schoolGrouping === "daily" ? 45 : 30,
-                              formatter: (value: string) =>
-                                formatWeeklyXAxisLabel(value, schoolGrouping),
-                              rich: {
-                                a: {
-                                  fontWeight: "bold",
-                                  fontSize: 11,
-                                  lineHeight: 16,
+                      {schoolLoading ? (
+                        <div className="text-center">
+                          <div
+                            className="spinner-border text-purple"
+                            role="status"
+                            style={{ width: "8rem", height: "8rem" }}
+                          ></div>
+                        </div>
+                      ) : (
+                        <LazyChart
+                          ref={chartRef16}
+                          option={{
+                            ...chartOptionSchool,
+                            xAxis: {
+                              ...chartOptionSchool.xAxis,
+                              axisLabel: {
+                                rotate: schoolGrouping === "daily" ? 45 : 30,
+                                formatter: (value: string) =>
+                                  formatWeeklyXAxisLabel(value, schoolGrouping),
+                                rich: {
+                                  a: {
+                                    fontWeight: "bold",
+                                    fontSize: 11,
+                                    lineHeight: 16,
+                                  },
+                                  b: {
+                                    fontSize: 10,
+                                    color: "#666",
+                                    lineHeight: 14,
+                                  },
                                 },
-                                b: {
-                                  fontSize: 10,
-                                  color: "#666",
-                                  lineHeight: 14,
-                                },
+                                margin: 20,
                               },
-                              margin: 20,
                             },
-                          },
-                        }}
-                        style={{ height: "400px", width: "100%" }}
-                        loading={schoolLoading || loadingPhase2}
-                      />
-                    )}
+                          }}
+                          style={{ height: "400px", width: "100%" }}
+                          loading={schoolLoading || loadingPhase2}
+                        />
+                      )}
+                    </div>
                   </div>
                 </div>
 
