@@ -677,36 +677,63 @@ export default function CouponsRedeemed() {
       "User ID",
       "Coupon Redeemed Date",
     ];
+
+    // Helper function to escape CSV values safely
+    const escapeCSVValue = (value: any) => {
+      if (value === null || value === undefined) return "";
+      const stringValue = String(value);
+
+      // Check if value contains comma, newline, or double quote
+      if (/[",\n]/.test(stringValue)) {
+        // Wrap in double quotes and escape existing double quotes by doubling them
+        return `"${stringValue.replace(/"/g, '""')}"`;
+      }
+      return stringValue;
+    };
+
+    // Create the header row
     const csvRows = [headers.join(",")];
+
     coupons.forEach((coupon, index) => {
-      const row = [
+      // Create an array of values for the row
+      const rowValues = [
         index + 1,
-        coupon["Student Name"] || "",
-        coupon["School Name"] || "",
-        coupon["Mobile Number"] || "",
-        coupon.state || "",
-        coupon.city || "",
-        coupon.cluster || "",
-        coupon.block || "",
-        coupon.district || "",
-        coupon.grade || "",
-        coupon["Coupon Title"] || "",
-        coupon["Coins Redeemed"] || "",
-        coupon.status || "",
-        coupon["School Code"] || "",
+        coupon["Student Name"],
+        coupon["School Name"],
+        coupon["Mobile Number"],
+        coupon.state,
+        coupon.city,
+        coupon.cluster,
+        coupon.block,
+        coupon.district,
+        coupon.grade,
+        coupon["Coupon Title"],
+        coupon["Coins Redeemed"],
+        coupon.status,
+        coupon["School Code"],
         coupon.user_id,
-        coupon["Coupon Redeemed Date"] || "",
+        coupon["Coupon Redeemed Date"],
       ];
-      csvRows.push(row.join(","));
+
+      // Map over values to escape them, then join with comma
+      const rowString = rowValues.map(escapeCSVValue).join(",");
+      csvRows.push(rowString);
     });
+
     const csvContent = csvRows.join("\n");
-    const blob = new Blob([csvContent], { type: "text/csv" });
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = "student_coupon_redemptions.csv";
+    link.download = `student_coupon_redemptions_${new Date()
+      .toISOString()
+      .slice(0, 10)}.csv`;
     link.click();
+
+    // Cleanup
+    URL.revokeObjectURL(url);
   };
+
 
   const formatDate = (dateString: string): string => {
     if (!dateString) return "";

@@ -917,7 +917,7 @@ export default function UserAnalyticsDashboard() {
         { name: "Total Coins Earned", value: totalPointsEarned || 0 },
         { name: "Total Coins Redeemed", value: totalPointsRedeemed || 0 },
         { name: "Total No. of Schools", value: schoolCount || 0 },
-        { name: "Total No. of Quiz Completes", value: quizCompletes || 0 },
+        { name: "Quiz Completed by Students", value: quizCompletes || 0 },
         {
           name: "Total Sessions Created by Mentors",
           value: totalSessionsCreated || 0,
@@ -1134,7 +1134,7 @@ export default function UserAnalyticsDashboard() {
         ["Total Coins Earned:", totalPointsEarned || 0],
         ["Total Coins Redeemed:", totalPointsRedeemed || 0],
         ["Total No. of Schools:", schoolCount || 0],
-        ["Total No. of Quiz Completes:", quizCompletes || 0],
+        ["Quiz Completed by Students:", quizCompletes || 0],
         ["Total Sessions Created by Mentors:", totalSessionsCreated || 0],
         [
           "Total Participants Joined Mentor Sessions:",
@@ -5770,7 +5770,7 @@ export default function UserAnalyticsDashboard() {
                   color: "bg-sky-900",
                 },
                 {
-                  title: "Total No. of Quiz Completes",
+                  title: "Quiz Completed by Students",
                   value: quizCompletes,
                   icon: <IconPercentage />,
                   color: "bg-sky-900",

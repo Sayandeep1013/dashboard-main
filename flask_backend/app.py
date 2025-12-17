@@ -80,6 +80,7 @@ def get_db_connection():
 def db_mode():
     return jsonify({"mode": CURRENT_DB_MODE})
 
+
 @app.route("/api/toggle-db", methods=["POST"])
 def toggle_db():
     global CURRENT_DB_MODE
@@ -2167,46 +2168,28 @@ def get_total_points_earned():
     try:
         filters = request.get_json() or {}
         logger.info(f"--- API CALL: total-points-earned ---")
-        logger.info(f"Incoming Filters: {filters}")
         
-        # STEP 1: Remove date-related keys
+        # 1. Separate Date Filters
         filters_no_date = {
             k: v for k, v in filters.items()
             if k not in ('date_range', 'start_date', 'end_date')
         }
         
-        # STEP 2: Build base WHERE clause
+        # 2. Build Base Where Clause
         where_clause, params = build_filter_conditions(filters_no_date)
-        logger.info(f"Base WHERE clause (Before Alias Fix): {where_clause}")
-        
-        # STEP 3: Fix ambiguous column references (Robust Method)
-        # This handles cases like 'type NOT IN', 'type IS NULL', etc.
-        
-        # First, specific fix for manual string injections if any
-        if "type != 3" in where_clause:
-            where_clause = where_clause.replace("type != 3", "u.type != 3")
-            
-        fields_to_fix = ['state', 'city', 'school_code', 'type', 'grade', 'gender']
+        logger.info(f"Initial SQL Where Clause: {where_clause}")
+        fields_to_fix = ['state', 'city', 'school_code', 'type', 'grade', 'gender', 'school_id']
         
         for field in fields_to_fix:
-            # We must handle various SQL operators carefully
-            # 1. Equals
-            where_clause = where_clause.replace(f"{field} =", f"u.{field} =")
-            # 2. Not Equals
-            where_clause = where_clause.replace(f"{field} !=", f"u.{field} !=")
-            # 3. IS NULL / IS NOT NULL
-            where_clause = where_clause.replace(f"{field} IS", f"u.{field} IS")
-            # 4. NOT IN (...)
-            where_clause = where_clause.replace(f"{field} NOT IN", f"u.{field} NOT IN")
-            # 5. IN (...) - Space before field ensures we don't match 'u.field' again
-            where_clause = where_clause.replace(f" {field} IN", f" u.{field} IN")
-            # 6. Handle case where "field IN" is at the very start of the string
-            if where_clause.startswith(f"{field} IN"):
-                 where_clause = f"u.{where_clause}"
+            pattern = r'(?<!\.)\b' + field + r'\b'
+            
+            # Perform replacement
+            where_clause = re.sub(pattern, f'u.{field}', where_clause)
+            
 
-        logger.info(f"Final WHERE clause (After Alias Fix): {where_clause}")
-        
-        # STEP 4: Mission Points Query
+        logger.info(f"Fixed SQL Where Clause: {where_clause}")
+
+        # 3. Mission Points Query
         mission_sql = f"""
             SELECT COALESCE(SUM(lamc.points), 0) AS total_points
             FROM lifeapp.la_mission_completes lamc
@@ -2216,27 +2199,22 @@ def get_total_points_earned():
         """
         mission_params = params.copy()
         
-        # STEP 5: Apply date filter on lamc.created_at
+        # 4. Date Filter for Missions
         date_sql_mission = ""
         if filters.get('date_range') and filters['date_range'] != 'All':
             dr = filters['date_range']
-            if dr == 'last7days':
-                date_sql_mission = " AND lamc.created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)"
-            elif dr == 'last30days':
-                date_sql_mission = " AND lamc.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)"
-            elif dr == 'last3months':
-                date_sql_mission = " AND lamc.created_at >= DATE_SUB(NOW(), INTERVAL 3 MONTH)"
-            elif dr == 'last6months':
-                date_sql_mission = " AND lamc.created_at >= DATE_SUB(NOW(), INTERVAL 6 MONTH)"
-            elif dr == 'lastyear':
-                date_sql_mission = " AND lamc.created_at >= DATE_SUB(NOW(), INTERVAL 1 YEAR)"
+            if dr == 'last7days': date_sql_mission = " AND lamc.created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)"
+            elif dr == 'last30days': date_sql_mission = " AND lamc.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)"
+            elif dr == 'last3months': date_sql_mission = " AND lamc.created_at >= DATE_SUB(NOW(), INTERVAL 3 MONTH)"
+            elif dr == 'last6months': date_sql_mission = " AND lamc.created_at >= DATE_SUB(NOW(), INTERVAL 6 MONTH)"
+            elif dr == 'lastyear': date_sql_mission = " AND lamc.created_at >= DATE_SUB(NOW(), INTERVAL 1 YEAR)"
         elif filters.get('start_date') and filters.get('end_date'):
             date_sql_mission = " AND lamc.created_at BETWEEN %s AND %s"
             mission_params.extend([filters['start_date'], filters['end_date']])
             
         mission_sql += date_sql_mission
         
-        # STEP 6: Quiz Coins Query
+        # 5. Quiz Coins Query
         quiz_sql = f"""
             SELECT COALESCE(SUM(lqgr.coins), 0) AS total_coins
             FROM lifeapp.la_quiz_game_results lqgr
@@ -2246,27 +2224,22 @@ def get_total_points_earned():
         """
         quiz_params = params.copy()
         
-        # STEP 7: Apply date filter on lqgr.created_at
+        # 6. Date Filter for Quizzes
         date_sql_quiz = ""
         if filters.get('date_range') and filters['date_range'] != 'All':
             dr = filters['date_range']
-            if dr == 'last7days':
-                date_sql_quiz = " AND lqgr.created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)"
-            elif dr == 'last30days':
-                date_sql_quiz = " AND lqgr.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)"
-            elif dr == 'last3months':
-                date_sql_quiz = " AND lqgr.created_at >= DATE_SUB(NOW(), INTERVAL 3 MONTH)"
-            elif dr == 'last6months':
-                date_sql_quiz = " AND lqgr.created_at >= DATE_SUB(NOW(), INTERVAL 6 MONTH)"
-            elif dr == 'lastyear':
-                date_sql_quiz = " AND lqgr.created_at >= DATE_SUB(NOW(), INTERVAL 1 YEAR)"
+            if dr == 'last7days': date_sql_quiz = " AND lqgr.created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)"
+            elif dr == 'last30days': date_sql_quiz = " AND lqgr.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)"
+            elif dr == 'last3months': date_sql_quiz = " AND lqgr.created_at >= DATE_SUB(NOW(), INTERVAL 3 MONTH)"
+            elif dr == 'last6months': date_sql_quiz = " AND lqgr.created_at >= DATE_SUB(NOW(), INTERVAL 6 MONTH)"
+            elif dr == 'lastyear': date_sql_quiz = " AND lqgr.created_at >= DATE_SUB(NOW(), INTERVAL 1 YEAR)"
         elif filters.get('start_date') and filters.get('end_date'):
             date_sql_quiz = " AND lqgr.created_at BETWEEN %s AND %s"
             quiz_params.extend([filters['start_date'], filters['end_date']])
             
         quiz_sql += date_sql_quiz
         
-        # STEP 8: Execute both queries
+        # 7. Execute Queries
         logger.info(f"Executing Mission SQL...")
         mission_result = execute_query(mission_sql, mission_params)
         
@@ -2276,7 +2249,7 @@ def get_total_points_earned():
         total_points = mission_result[0]['total_points'] if mission_result else 0
         total_coins = quiz_result[0]['total_coins'] if quiz_result else 0
         
-        logger.info(f"Results -> Mission Points: {total_points}, Quiz Coins: {total_coins}")
+        logger.info(f"SUCCESS: Mission Points={total_points}, Quiz Coins={total_coins}")
 
         combined_total = int(total_points + total_coins)
         
@@ -2284,31 +2257,26 @@ def get_total_points_earned():
         
     except Exception as e:
         logger.error(f"CRITICAL ERROR in total-points-earned: {str(e)}")
-        # It's helpful to print the error to console too
-        print(f"Error: {e}")
         return jsonify({"error": str(e)}), 500
-          
+        
+         
 @app.route('/api/total-points-redeemed', methods=['POST'])
 def get_total_points_redeemed():
     try:
         filters = request.get_json() or {}
+        logger.info("--- API CALL: Total Points Redeemed ---")
 
-        # STEP 1: Remove date-related keys before passing to build_filter_conditions
-        filters_no_date = {
-            k: v for k, v in filters.items()
-            if k not in ('date_range', 'start_date', 'end_date')
-        }
-
-        # STEP 2: Build base WHERE clause for user demographics
+        filters_no_date = {k: v for k, v in filters.items() if k not in ('date_range', 'start_date', 'end_date')}
         where_clause, params = build_filter_conditions(filters_no_date)
 
-        # STEP 3: Fix ambiguous column references by prefixing with 'u.'
-        if "type != 3" in where_clause:
-            where_clause = where_clause.replace("type != 3", "u.type != 3")
-        for field in ['state', 'city', 'school_code', 'type', 'grade', 'gender']:
-            where_clause = where_clause.replace(f"{field} =", f"u.{field} =")
+        # --- AMBIGUITY FIX ---
+        if "type != 3" in where_clause: where_clause = where_clause.replace("type != 3", "u.type != 3")
+        if "school_id IN" in where_clause: where_clause = where_clause.replace("school_id IN", "u.school_id IN")
+        for field in ['state', 'city', 'school_code', 'type', 'grade', 'gender', 'school_id']:
+            pattern = r'(?<!\.)\b' + field + r'\b'
+            where_clause = re.sub(pattern, f'u.{field}', where_clause)
+        # ---------------------
 
-        # STEP 4: Build query
         sql = f"""
             SELECT COALESCE(SUM(cr.coins), 0) AS total_coins_redeemed
             FROM lifeapp.coupon_redeems cr
@@ -2316,39 +2284,25 @@ def get_total_points_redeemed():
             WHERE cr.coins IS NOT NULL AND cr.coins > 0
               AND {where_clause}
         """
-        final_params = params.copy()
-
-        # STEP 5: Apply date filter on cr.created_at
+        
         if filters.get('date_range') and filters['date_range'] != 'All':
             dr = filters['date_range']
-            if dr == 'last7days':
-                sql += " AND cr.created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)"
-            elif dr == 'last30days':
-                sql += " AND cr.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)"
-            elif dr == 'last3months':
-                sql += " AND cr.created_at >= DATE_SUB(NOW(), INTERVAL 3 MONTH)"
-            elif dr == 'last6months':
-                sql += " AND cr.created_at >= DATE_SUB(NOW(), INTERVAL 6 MONTH)"
-            elif dr == 'lastyear':
-                sql += " AND cr.created_at >= DATE_SUB(NOW(), INTERVAL 1 YEAR)"
+            if dr == 'last7days': sql += " AND cr.created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)"
+            elif dr == 'last30days': sql += " AND cr.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)"
+            elif dr == 'last3months': sql += " AND cr.created_at >= DATE_SUB(NOW(), INTERVAL 3 MONTH)"
+            elif dr == 'last6months': sql += " AND cr.created_at >= DATE_SUB(NOW(), INTERVAL 6 MONTH)"
+            elif dr == 'lastyear': sql += " AND cr.created_at >= DATE_SUB(NOW(), INTERVAL 1 YEAR)"
         elif filters.get('start_date') and filters.get('end_date'):
             sql += " AND cr.created_at BETWEEN %s AND %s"
-            final_params.extend([filters['start_date'], filters['end_date']])
+            params.extend([filters['start_date'], filters['end_date']])
 
-        # STEP 6: Execute
-        connection = get_db_connection()
-        with connection.cursor() as cursor:
-            cursor.execute(sql, final_params)
-            result = cursor.fetchall()
-
+        result = execute_query(sql, params)
         return jsonify(result), 200
 
     except Exception as e:
+        logger.error(f"Error in total_points_redeemed: {str(e)}")
         return jsonify({"error": str(e)}), 500
-    finally:
-        if 'connection' in locals() and connection:
-            connection.close()
-
+    
 @app.route('/api/school_count', methods=['POST'])
 def get_school_count():
     try:
@@ -2407,23 +2361,19 @@ def get_school_count():
 def get_total_missions_completed_assigned_by_teacher():
     try:
         filters = request.get_json() or {}
+        logger.info("--- API CALL: Missions Assigned By Teacher ---")
         
-        # STEP 1: Remove date-related keys before passing to build_filter_conditions
-        filters_no_date = {
-            k: v for k, v in filters.items()
-            if k not in ('date_range', 'start_date', 'end_date')
-        }
-        
-        # STEP 2: Build base WHERE clause for user demographics
+        filters_no_date = {k: v for k, v in filters.items() if k not in ('date_range', 'start_date', 'end_date')}
         where_clause, params = build_filter_conditions(filters_no_date)
         
-        # STEP 3: Fix ambiguous column references by prefixing with 'u.'
-        if "type != 3" in where_clause:
-            where_clause = where_clause.replace("type != 3", "u.type != 3")
-        for field in ['state', 'city', 'school_code', 'type', 'grade', 'gender']:
-            where_clause = where_clause.replace(f"{field} =", f"u.{field} =")
+        # --- AMBIGUITY FIX (Regex) ---
+        if "type != 3" in where_clause: where_clause = where_clause.replace("type != 3", "u.type != 3")
+        if "school_id IN" in where_clause: where_clause = where_clause.replace("school_id IN", "u.school_id IN")
+        for field in ['state', 'city', 'school_code', 'type', 'grade', 'gender', 'school_id']:
+            pattern = r'(?<!\.)\b' + field + r'\b'
+            where_clause = re.sub(pattern, f'u.{field}', where_clause)
+        # -----------------------------
         
-        # STEP 4: Build query with proper teacher-assignment join
         sql = f"""
             SELECT COUNT(*) as count 
             FROM lifeapp.la_mission_completes lamc 
@@ -2431,119 +2381,103 @@ def get_total_missions_completed_assigned_by_teacher():
             INNER JOIN lifeapp.la_mission_assigns lma 
                 ON lma.user_id = lamc.user_id 
                 AND lma.la_mission_id = lamc.la_mission_id
-                AND lma.type = 1  -- teacher-assigned only
-            WHERE u.type = 3  -- only students
+                AND lma.type = 1 
+            WHERE u.type = 3
               AND {where_clause}
         """
         
-        # STEP 5: Apply date filter on lamc.created_at
+        date_sql = ""
         if filters.get('date_range') and filters['date_range'] != 'All':
             dr = filters['date_range']
-            if dr == 'last7days':
-                sql += " AND lamc.created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)"
-            elif dr == 'last30days':
-                sql += " AND lamc.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)"
-            elif dr == 'last3months':
-                sql += " AND lamc.created_at >= DATE_SUB(NOW(), INTERVAL 3 MONTH)"
-            elif dr == 'last6months':
-                sql += " AND lamc.created_at >= DATE_SUB(NOW(), INTERVAL 6 MONTH)"
-            elif dr == 'lastyear':
-                sql += " AND lamc.created_at >= DATE_SUB(NOW(), INTERVAL 1 YEAR)"
+            if dr == 'last7days': date_sql = " AND lamc.created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)"
+            elif dr == 'last30days': date_sql = " AND lamc.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)"
+            elif dr == 'last3months': date_sql = " AND lamc.created_at >= DATE_SUB(NOW(), INTERVAL 3 MONTH)"
+            elif dr == 'last6months': date_sql = " AND lamc.created_at >= DATE_SUB(NOW(), INTERVAL 6 MONTH)"
+            elif dr == 'lastyear': date_sql = " AND lamc.created_at >= DATE_SUB(NOW(), INTERVAL 1 YEAR)"
         elif filters.get('start_date') and filters.get('end_date'):
-            sql += " AND lamc.created_at BETWEEN %s AND %s"
+            date_sql = " AND lamc.created_at BETWEEN %s AND %s"
             params.extend([filters['start_date'], filters['end_date']])
+            
+        sql += date_sql
         
-        # STEP 6: Execute
         result = execute_query(sql, params)
         count = result[0]['count'] if result else 0
         
-        return jsonify([{'count': count}]), 200
+        # RETURN OBJECT
+        return jsonify({'count': count}), 200
+        
     except Exception as e:
+        logger.error(f"Error in teacher assigned missions: {str(e)}")
         return jsonify({"error": str(e)}), 500
     
 @app.route('/api/quiz_completes', methods=['POST'])
 def get_quiz_completes():
     try:
         filters = request.get_json() or {}
+        logger.info("--- API CALL: Quiz Completes (Students Only) ---")
         
-        # STEP 1: Remove date-related keys before passing to build_filter_conditions
-        filters_no_date = {
-            k: v for k, v in filters.items()
-            if k not in ('date_range', 'start_date', 'end_date')
-        }
-        
-        # STEP 2: Build base WHERE clause for user demographics
+        filters_no_date = {k: v for k, v in filters.items() if k not in ('date_range', 'start_date', 'end_date')}
         where_clause, params = build_filter_conditions(filters_no_date)
         
-        # STEP 3: Fix ambiguous column references by prefixing with 'u.'
-        if "type != 3" in where_clause:
-            where_clause = where_clause.replace("type != 3", "u.type != 3")
-        for field in ['state', 'city', 'school_code', 'type', 'grade', 'gender']:
-            where_clause = where_clause.replace(f"{field} =", f"u.{field} =")
+        # --- AMBIGUITY FIX (Regex) ---
+        if "type != 3" in where_clause: where_clause = where_clause.replace("type != 3", "u.type != 3")
+        if "school_id IN" in where_clause: where_clause = where_clause.replace("school_id IN", "u.school_id IN")
+        for field in ['state', 'city', 'school_code', 'type', 'grade', 'gender', 'school_id']:
+            pattern = r'(?<!\.)\b' + field + r'\b'
+            where_clause = re.sub(pattern, f'u.{field}', where_clause)
+        # -----------------------------
         
-        # STEP 4: Build query
+        # NOTE: This query enforces u.type = 3 (Students Only)
         sql = f"""
             SELECT COUNT(*) as count 
             FROM lifeapp.la_quiz_game_results lqgr 
             INNER JOIN lifeapp.la_quiz_games lqg ON lqg.id = lqgr.la_quiz_game_id
             INNER JOIN lifeapp.users u ON u.id = lqgr.user_id 
             WHERE lqg.type = 2 
-              AND u.type = 3
+              AND u.type = 3 
               AND {where_clause}
         """
         
-        # STEP 5: Apply date filter on lqgr.created_at
+        date_sql = ""
         if filters.get('date_range') and filters['date_range'] != 'All':
             dr = filters['date_range']
-            if dr == 'last7days':
-                sql += " AND lqgr.created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)"
-            elif dr == 'last30days':
-                sql += " AND lqgr.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)"
-            elif dr == 'last3months':
-                sql += " AND lqgr.created_at >= DATE_SUB(NOW(), INTERVAL 3 MONTH)"
-            elif dr == 'last6months':
-                sql += " AND lqgr.created_at >= DATE_SUB(NOW(), INTERVAL 6 MONTH)"
-            elif dr == 'lastyear':
-                sql += " AND lqgr.created_at >= DATE_SUB(NOW(), INTERVAL 1 YEAR)"
+            if dr == 'last7days': date_sql = " AND lqgr.created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)"
+            elif dr == 'last30days': date_sql = " AND lqgr.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)"
+            elif dr == 'last3months': date_sql = " AND lqgr.created_at >= DATE_SUB(NOW(), INTERVAL 3 MONTH)"
+            elif dr == 'last6months': date_sql = " AND lqgr.created_at >= DATE_SUB(NOW(), INTERVAL 6 MONTH)"
+            elif dr == 'lastyear': date_sql = " AND lqgr.created_at >= DATE_SUB(NOW(), INTERVAL 1 YEAR)"
         elif filters.get('start_date') and filters.get('end_date'):
-            sql += " AND lqgr.created_at BETWEEN %s AND %s"
+            date_sql = " AND lqgr.created_at BETWEEN %s AND %s"
             params.extend([filters['start_date'], filters['end_date']])
+            
+        sql += date_sql
         
-        # STEP 6: Execute
-        connection = get_db_connection()
-        try:
-            with connection.cursor() as cursor:
-                cursor.execute(sql, params)
-                result = cursor.fetchone()
-                count = result['count'] if result else 0
-            return jsonify([{'count': count}]), 200
-        finally:
-            connection.close()
+        logger.info(f"Executing Quiz Completes (Student Only) SQL...")
+        result = execute_query(sql, params)
+        count = result[0]['count'] if result else 0
+        return jsonify([{'count': count}]), 200
             
     except Exception as e:
+        logger.error(f"Error in quiz_completes: {str(e)}")
         return jsonify({'error': str(e)}), 500
-    
+       
 @app.route('/api/total_sessions_created', methods=['POST'])
 def get_total_sessions_created():
     try:
         filters = request.get_json() or {}
+        logger.info("--- API CALL: Total Sessions Created ---")
         
-        # STEP 1: Remove date-related keys before passing to build_filter_conditions
-        filters_no_date = {
-            k: v for k, v in filters.items()
-            if k not in ('date_range', 'start_date', 'end_date')
-        }
-        
-        # STEP 2: Build base WHERE clause for user demographics
+        filters_no_date = {k: v for k, v in filters.items() if k not in ('date_range', 'start_date', 'end_date')}
         where_clause, params = build_filter_conditions(filters_no_date)
         
-        # STEP 3: Fix ambiguous column references by prefixing with 'u.'
-        if "type != 3" in where_clause:
-            where_clause = where_clause.replace("type != 3", "u.type != 3")
-        for field in ['state', 'city', 'school_code', 'type', 'grade', 'gender']:
-            where_clause = where_clause.replace(f"{field} =", f"u.{field} =")
+        # --- AMBIGUITY FIX ---
+        if "type != 3" in where_clause: where_clause = where_clause.replace("type != 3", "u.type != 3")
+        if "school_id IN" in where_clause: where_clause = where_clause.replace("school_id IN", "u.school_id IN")
+        for field in ['state', 'city', 'school_code', 'type', 'grade', 'gender', 'school_id']:
+            pattern = r'(?<!\.)\b' + field + r'\b'
+            where_clause = re.sub(pattern, f'u.{field}', where_clause)
+        # ---------------------
         
-        # STEP 4: Build query
         sql = f"""
             SELECT COUNT(*) as count
             FROM lifeapp.la_sessions las
@@ -2552,53 +2486,42 @@ def get_total_sessions_created():
               AND {where_clause}
         """
         
-        # STEP 5: Apply date filter on las.created_at
         if filters.get('date_range') and filters['date_range'] != 'All':
             dr = filters['date_range']
-            if dr == 'last7days':
-                sql += " AND las.created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)"
-            elif dr == 'last30days':
-                sql += " AND las.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)"
-            elif dr == 'last3months':
-                sql += " AND las.created_at >= DATE_SUB(NOW(), INTERVAL 3 MONTH)"
-            elif dr == 'last6months':
-                sql += " AND las.created_at >= DATE_SUB(NOW(), INTERVAL 6 MONTH)"
-            elif dr == 'lastyear':
-                sql += " AND las.created_at >= DATE_SUB(NOW(), INTERVAL 1 YEAR)"
+            if dr == 'last7days': sql += " AND las.created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)"
+            elif dr == 'last30days': sql += " AND las.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)"
+            elif dr == 'last3months': sql += " AND las.created_at >= DATE_SUB(NOW(), INTERVAL 3 MONTH)"
+            elif dr == 'last6months': sql += " AND las.created_at >= DATE_SUB(NOW(), INTERVAL 6 MONTH)"
+            elif dr == 'lastyear': sql += " AND las.created_at >= DATE_SUB(NOW(), INTERVAL 1 YEAR)"
         elif filters.get('start_date') and filters.get('end_date'):
             sql += " AND las.created_at BETWEEN %s AND %s"
             params.extend([filters['start_date'], filters['end_date']])
         
-        # STEP 6: Execute
         result = execute_query(sql, params)
         count = result[0]['count'] if result else 0
-        
         return jsonify([{'count': count}]), 200
         
     except Exception as e:
+        logger.error(f"Error in sessions created: {str(e)}")
         return jsonify({"error": str(e)}), 500
-    
+
 @app.route('/api/session_participants_total_dashboard', methods=['POST'])
 def get_session_participants_total_dashboard():
     try:
         filters = request.get_json() or {}
+        logger.info("--- API CALL: Session Participants ---")
         
-        # STEP 1: Remove date-related keys before passing to build_filter_conditions
-        filters_no_date = {
-            k: v for k, v in filters.items()
-            if k not in ('date_range', 'start_date', 'end_date')
-        }
-        
-        # STEP 2: Build base WHERE clause for user demographics
+        filters_no_date = {k: v for k, v in filters.items() if k not in ('date_range', 'start_date', 'end_date')}
         where_clause, params = build_filter_conditions(filters_no_date)
         
-        # STEP 3: Fix ambiguous column references by prefixing with 'u.'
-        if "type != 3" in where_clause:
-            where_clause = where_clause.replace("type != 3", "u.type != 3")
-        for field in ['state', 'city', 'school_code', 'type', 'grade', 'gender']:
-            where_clause = where_clause.replace(f"{field} =", f"u.{field} =")
+        # --- AMBIGUITY FIX ---
+        if "type != 3" in where_clause: where_clause = where_clause.replace("type != 3", "u.type != 3")
+        if "school_id IN" in where_clause: where_clause = where_clause.replace("school_id IN", "u.school_id IN")
+        for field in ['state', 'city', 'school_code', 'type', 'grade', 'gender', 'school_id']:
+            pattern = r'(?<!\.)\b' + field + r'\b'
+            where_clause = re.sub(pattern, f'u.{field}', where_clause)
+        # ---------------------
         
-        # STEP 4: Build query
         sql = f"""
             SELECT COUNT(DISTINCT lasp.user_id) as count
             FROM lifeapp.la_session_participants lasp
@@ -2606,52 +2529,41 @@ def get_session_participants_total_dashboard():
             WHERE {where_clause}
         """
         
-        # STEP 5: Apply date filter on lasp.created_at
         if filters.get('date_range') and filters['date_range'] != 'All':
             dr = filters['date_range']
-            if dr == 'last7days':
-                sql += " AND lasp.created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)"
-            elif dr == 'last30days':
-                sql += " AND lasp.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)"
-            elif dr == 'last3months':
-                sql += " AND lasp.created_at >= DATE_SUB(NOW(), INTERVAL 3 MONTH)"
-            elif dr == 'last6months':
-                sql += " AND lasp.created_at >= DATE_SUB(NOW(), INTERVAL 6 MONTH)"
-            elif dr == 'lastyear':
-                sql += " AND lasp.created_at >= DATE_SUB(NOW(), INTERVAL 1 YEAR)"
+            if dr == 'last7days': sql += " AND lasp.created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)"
+            elif dr == 'last30days': sql += " AND lasp.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)"
+            elif dr == 'last3months': sql += " AND lasp.created_at >= DATE_SUB(NOW(), INTERVAL 3 MONTH)"
+            elif dr == 'last6months': sql += " AND lasp.created_at >= DATE_SUB(NOW(), INTERVAL 6 MONTH)"
+            elif dr == 'lastyear': sql += " AND lasp.created_at >= DATE_SUB(NOW(), INTERVAL 1 YEAR)"
         elif filters.get('start_date') and filters.get('end_date'):
             sql += " AND lasp.created_at BETWEEN %s AND %s"
             params.extend([filters['start_date'], filters['end_date']])
         
-        # STEP 6: Execute
         result = execute_query(sql, params)
         count = result[0]['count'] if result else 0
-        
         return jsonify([{'count': count}]), 200
     except Exception as e:
+        logger.error(f"Error in session participants: {str(e)}")
         return jsonify({'error': str(e)}), 500
-    
+
 @app.route('/api/mentor_participated_in_sessions_total_dashboard', methods=['POST'])
 def get_mentor_participated_in_sessions_total_dashboard():
     try:
         filters = request.get_json() or {}
+        logger.info("--- API CALL: Mentor Participants ---")
         
-        # STEP 1: Remove date-related keys before passing to build_filter_conditions
-        filters_no_date = {
-            k: v for k, v in filters.items()
-            if k not in ('date_range', 'start_date', 'end_date')
-        }
-        
-        # STEP 2: Build base WHERE clause for user demographics
+        filters_no_date = {k: v for k, v in filters.items() if k not in ('date_range', 'start_date', 'end_date')}
         where_clause, params = build_filter_conditions(filters_no_date)
         
-        # STEP 3: Fix ambiguous column references by prefixing with 'u.'
-        if "type != 3" in where_clause:
-            where_clause = where_clause.replace("type != 3", "u.type != 3")
-        for field in ['state', 'city', 'school_code', 'type', 'grade', 'gender']:
-            where_clause = where_clause.replace(f"{field} =", f"u.{field} =")
+        # --- AMBIGUITY FIX ---
+        if "type != 3" in where_clause: where_clause = where_clause.replace("type != 3", "u.type != 3")
+        if "school_id IN" in where_clause: where_clause = where_clause.replace("school_id IN", "u.school_id IN")
+        for field in ['state', 'city', 'school_code', 'type', 'grade', 'gender', 'school_id']:
+            pattern = r'(?<!\.)\b' + field + r'\b'
+            where_clause = re.sub(pattern, f'u.{field}', where_clause)
+        # ---------------------
         
-        # STEP 4: Build query on la_session_participants
         sql = f"""
             SELECT COUNT(DISTINCT lasp.user_id) as count
             FROM lifeapp.la_session_participants lasp
@@ -2660,31 +2572,24 @@ def get_mentor_participated_in_sessions_total_dashboard():
               AND {where_clause}
         """
         
-        # STEP 5: Apply date filter on lasp.created_at
         if filters.get('date_range') and filters['date_range'] != 'All':
             dr = filters['date_range']
-            if dr == 'last7days':
-                sql += " AND lasp.created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)"
-            elif dr == 'last30days':
-                sql += " AND lasp.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)"
-            elif dr == 'last3months':
-                sql += " AND lasp.created_at >= DATE_SUB(NOW(), INTERVAL 3 MONTH)"
-            elif dr == 'last6months':
-                sql += " AND lasp.created_at >= DATE_SUB(NOW(), INTERVAL 6 MONTH)"
-            elif dr == 'lastyear':
-                sql += " AND lasp.created_at >= DATE_SUB(NOW(), INTERVAL 1 YEAR)"
+            if dr == 'last7days': sql += " AND lasp.created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)"
+            elif dr == 'last30days': sql += " AND lasp.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)"
+            elif dr == 'last3months': sql += " AND lasp.created_at >= DATE_SUB(NOW(), INTERVAL 3 MONTH)"
+            elif dr == 'last6months': sql += " AND lasp.created_at >= DATE_SUB(NOW(), INTERVAL 6 MONTH)"
+            elif dr == 'lastyear': sql += " AND lasp.created_at >= DATE_SUB(NOW(), INTERVAL 1 YEAR)"
         elif filters.get('start_date') and filters.get('end_date'):
             sql += " AND lasp.created_at BETWEEN %s AND %s"
             params.extend([filters['start_date'], filters['end_date']])
         
-        # STEP 6: Execute
         result = execute_query(sql, params)
         count = result[0]['count'] if result else 0
-        
         return jsonify([{'count': count}]), 200
     except Exception as e:
+        logger.error(f"Error in mentor participants: {str(e)}")
         return jsonify({'error': str(e)}), 500
-    
+               
 @app.route('/api/teacher-count', methods=['POST'])
 def get_teacher_count():
     try:
@@ -2792,337 +2697,137 @@ def get_total_student_count():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
     
+# ================= MISSION BASED COUNT CARDS =================
+
 @app.route('/api/total_missions_completes', methods=['POST'])
 def get_total_missions_completes():
-    try:
-        filters = request.get_json() or {}
-        
-        # STEP 1: Remove date-related keys before passing to build_filter_conditions
-        filters_no_date = {
-            k: v for k, v in filters.items()
-            if k not in ('date_range', 'start_date', 'end_date')
-        }
-        
-        # STEP 2: Build base WHERE clause for user demographics
-        where_clause, params = build_filter_conditions(filters_no_date)
-        
-        # STEP 3: Fix ambiguous column references by prefixing with 'u.'
-        if "type != 3" in where_clause:
-            where_clause = where_clause.replace("type != 3", "u.type != 3")
-        for field in ['state', 'city', 'school_code', 'type', 'grade', 'gender']:
-            where_clause = where_clause.replace(f"{field} =", f"u.{field} =")
-        
-        # STEP 4: Build query
-        sql = f"""
-            SELECT COUNT(*) as count
-            FROM lifeapp.la_mission_completes lamc
-            INNER JOIN lifeapp.la_missions lam ON lam.id = lamc.la_mission_id
-            INNER JOIN lifeapp.users u ON u.id = lamc.user_id
-            WHERE lam.type = 1
-              AND {where_clause}
-        """
-        
-        # STEP 5: Apply date filter on lamc.created_at
-        if filters.get('date_range') and filters['date_range'] != 'All':
-            dr = filters['date_range']
-            if dr == 'last7days':
-                sql += " AND lamc.created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)"
-            elif dr == 'last30days':
-                sql += " AND lamc.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)"
-            elif dr == 'last3months':
-                sql += " AND lamc.created_at >= DATE_SUB(NOW(), INTERVAL 3 MONTH)"
-            elif dr == 'last6months':
-                sql += " AND lamc.created_at >= DATE_SUB(NOW(), INTERVAL 6 MONTH)"
-            elif dr == 'lastyear':
-                sql += " AND lamc.created_at >= DATE_SUB(NOW(), INTERVAL 1 YEAR)"
-        elif filters.get('start_date') and filters.get('end_date'):
-            sql += " AND lamc.created_at BETWEEN %s AND %s"
-            params.extend([filters['start_date'], filters['end_date']])
-        
-        # STEP 6: Execute
-        result = execute_query(sql, params)
-        count = result[0]['count'] if result else 0
-        
-        return jsonify([{'count': count}]), 200
-        
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-    
+    return _get_mission_based_count(request, mission_type=1, label="Missions")
+
 @app.route('/api/total_jigyasa_completes', methods=['POST'])
 def get_total_jigyasa_completes():
-    try:
-        filters = request.get_json() or {}
-        
-        # STEP 1: Remove date-related keys before passing to build_filter_conditions
-        filters_no_date = {
-            k: v for k, v in filters.items()
-            if k not in ('date_range', 'start_date', 'end_date')
-        }
-        
-        # STEP 2: Build base WHERE clause for user demographics
-        where_clause, params = build_filter_conditions(filters_no_date)
-        
-        # STEP 3: Fix ambiguous column references by prefixing with 'u.'
-        if "type != 3" in where_clause:
-            where_clause = where_clause.replace("type != 3", "u.type != 3")
-        for field in ['state', 'city', 'school_code', 'type', 'grade', 'gender']:
-            where_clause = where_clause.replace(f"{field} =", f"u.{field} =")
-        
-        # STEP 4: Build query
-        sql = f"""
-            SELECT COUNT(*) as count 
-            FROM lifeapp.la_mission_completes lamc 
-            INNER JOIN lifeapp.la_missions lam ON lam.id = lamc.la_mission_id 
-            INNER JOIN lifeapp.users u ON u.id = lamc.user_id 
-            WHERE lam.type = 5
-              AND {where_clause}
-        """
-        
-        # STEP 5: Apply date filter on lamc.created_at
-        if filters.get('date_range') and filters['date_range'] != 'All':
-            dr = filters['date_range']
-            if dr == 'last7days':
-                sql += " AND lamc.created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)"
-            elif dr == 'last30days':
-                sql += " AND lamc.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)"
-            elif dr == 'last3months':
-                sql += " AND lamc.created_at >= DATE_SUB(NOW(), INTERVAL 3 MONTH)"
-            elif dr == 'last6months':
-                sql += " AND lamc.created_at >= DATE_SUB(NOW(), INTERVAL 6 MONTH)"
-            elif dr == 'lastyear':
-                sql += " AND lamc.created_at >= DATE_SUB(NOW(), INTERVAL 1 YEAR)"
-        elif filters.get('start_date') and filters.get('end_date'):
-            sql += " AND lamc.created_at BETWEEN %s AND %s"
-            params.extend([filters['start_date'], filters['end_date']])
-        
-        # STEP 6: Execute
-        result = execute_query(sql, params)
-        count = result[0]['count'] if result else 0
-        
-        return jsonify([{'count': count}]), 200
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    return _get_mission_based_count(request, mission_type=5, label="Jigyasa")
 
 @app.route('/api/total_pragya_completes', methods=['POST'])
 def get_total_pragya_completes():
+    return _get_mission_based_count(request, mission_type=6, label="Pragya")
+
+@app.route('/api/total_puzzle_completes', methods=['POST'])
+def get_total_puzzle_completes():
+    return _get_mission_based_count(request, mission_type=4, label="Puzzle")
+
+# Helper function
+def _get_mission_based_count(req, mission_type, label):
     try:
-        filters = request.get_json() or {}
+        filters = req.get_json() or {}
+        logger.info(f"--- API CALL: Total {label} Completes ---")
         
-        # STEP 1: Remove date-related keys before passing to build_filter_conditions
-        filters_no_date = {
-            k: v for k, v in filters.items()
-            if k not in ('date_range', 'start_date', 'end_date')
-        }
-        
-        # STEP 2: Build base WHERE clause for user demographics
+        filters_no_date = {k: v for k, v in filters.items() if k not in ('date_range', 'start_date', 'end_date')}
         where_clause, params = build_filter_conditions(filters_no_date)
         
-        # STEP 3: Fix ambiguous column references by prefixing with 'u.'
-        if "type != 3" in where_clause:
-            where_clause = where_clause.replace("type != 3", "u.type != 3")
-        for field in ['state', 'city', 'school_code', 'type', 'grade', 'gender']:
-            where_clause = where_clause.replace(f"{field} =", f"u.{field} =")
-        
-        # STEP 4: Build query
+        # --- AMBIGUITY FIX (Regex) ---
+        if "type != 3" in where_clause: where_clause = where_clause.replace("type != 3", "u.type != 3")
+        if "school_id IN" in where_clause: where_clause = where_clause.replace("school_id IN", "u.school_id IN")
+        for field in ['state', 'city', 'school_code', 'type', 'grade', 'gender', 'school_id']:
+            pattern = r'(?<!\.)\b' + field + r'\b'
+            where_clause = re.sub(pattern, f'u.{field}', where_clause)
+        # -----------------------------
+
         sql = f"""
             SELECT COUNT(*) as count 
             FROM lifeapp.la_mission_completes lamc 
             INNER JOIN lifeapp.la_missions lam ON lam.id = lamc.la_mission_id 
             INNER JOIN lifeapp.users u ON u.id = lamc.user_id 
-            WHERE lam.type = 6
+            WHERE lam.type = %s
               AND {where_clause}
         """
-        
-        # STEP 5: Apply date filter on lamc.created_at
+        final_params = [mission_type] + params
+
+        date_sql = ""
         if filters.get('date_range') and filters['date_range'] != 'All':
             dr = filters['date_range']
-            if dr == 'last7days':
-                sql += " AND lamc.created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)"
-            elif dr == 'last30days':
-                sql += " AND lamc.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)"
-            elif dr == 'last3months':
-                sql += " AND lamc.created_at >= DATE_SUB(NOW(), INTERVAL 3 MONTH)"
-            elif dr == 'last6months':
-                sql += " AND lamc.created_at >= DATE_SUB(NOW(), INTERVAL 6 MONTH)"
-            elif dr == 'lastyear':
-                sql += " AND lamc.created_at >= DATE_SUB(NOW(), INTERVAL 1 YEAR)"
+            if dr == 'last7days': date_sql = " AND lamc.created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)"
+            elif dr == 'last30days': date_sql = " AND lamc.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)"
+            elif dr == 'last3months': date_sql = " AND lamc.created_at >= DATE_SUB(NOW(), INTERVAL 3 MONTH)"
+            elif dr == 'last6months': date_sql = " AND lamc.created_at >= DATE_SUB(NOW(), INTERVAL 6 MONTH)"
+            elif dr == 'lastyear': date_sql = " AND lamc.created_at >= DATE_SUB(NOW(), INTERVAL 1 YEAR)"
         elif filters.get('start_date') and filters.get('end_date'):
-            sql += " AND lamc.created_at BETWEEN %s AND %s"
-            params.extend([filters['start_date'], filters['end_date']])
+            date_sql = " AND lamc.created_at BETWEEN %s AND %s"
+            final_params.extend([filters['start_date'], filters['end_date']])
         
-        # STEP 6: Execute
-        result = execute_query(sql, params)
+        sql += date_sql
+        
+        result = execute_query(sql, final_params)
         count = result[0]['count'] if result else 0
         
-        return jsonify([{'count': count}]), 200
+        # RETURN OBJECT (Fixed for Frontend consistency)
+        return jsonify({'count': count}), 200
+        
     except Exception as e:
+        logger.error(f"Error in {label} completes: {str(e)}")
         return jsonify({"error": str(e)}), 500
-    
+      
+
+# ================= QUIZ/GAME BASED COUNT CARDS =================
+
 @app.route('/api/total_quiz_completes', methods=['POST'])
 def get_total_quiz_completes():
+    return _get_quiz_based_count(request, game_type=2, label="Quiz")
+
+@app.route('/api/total_riddle_completes', methods=['POST'])
+def get_total_riddle_completes():
+    return _get_quiz_based_count(request, game_type=3, label="Riddle")
+
+def _get_quiz_based_count(req, game_type, label):
     try:
-        filters = request.get_json() or {}
+        filters = req.get_json() or {}
+        logger.info(f"--- API CALL: Total {label} Completes ---")
         
-        # STEP 1: Remove date-related keys before passing to build_filter_conditions
-        filters_no_date = {
-            k: v for k, v in filters.items()
-            if k not in ('date_range', 'start_date', 'end_date')
-        }
-        
-        # STEP 2: Build base WHERE clause for user demographics
+        filters_no_date = {k: v for k, v in filters.items() if k not in ('date_range', 'start_date', 'end_date')}
         where_clause, params = build_filter_conditions(filters_no_date)
         
-        # STEP 3: Fix ambiguous column references by prefixing with 'u.'
-        if "type != 3" in where_clause:
-            where_clause = where_clause.replace("type != 3", "u.type != 3")
-        for field in ['state', 'city', 'school_code', 'type', 'grade', 'gender']:
-            where_clause = where_clause.replace(f"{field} =", f"u.{field} =")
-        
-        # STEP 4: Build query
+        # --- AMBIGUITY FIX (Regex) ---
+        if "type != 3" in where_clause: where_clause = where_clause.replace("type != 3", "u.type != 3")
+        if "school_id IN" in where_clause: where_clause = where_clause.replace("school_id IN", "u.school_id IN")
+        for field in ['state', 'city', 'school_code', 'type', 'grade', 'gender', 'school_id']:
+            pattern = r'(?<!\.)\b' + field + r'\b'
+            where_clause = re.sub(pattern, f'u.{field}', where_clause)
+        # -----------------------------
+
         sql = f"""
             SELECT COUNT(*) as count 
             FROM lifeapp.la_quiz_game_results lqgr 
             INNER JOIN lifeapp.la_quiz_games lqg ON lqg.id = lqgr.la_quiz_game_id
             INNER JOIN lifeapp.users u ON u.id = lqgr.user_id 
-            WHERE lqg.type = 2
+            WHERE lqg.type = %s
               AND {where_clause}
         """
-        
-        # STEP 5: Apply date filter on lqgr.created_at
+        final_params = [game_type] + params
+
+        date_sql = ""
         if filters.get('date_range') and filters['date_range'] != 'All':
             dr = filters['date_range']
-            if dr == 'last7days':
-                sql += " AND lqgr.created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)"
-            elif dr == 'last30days':
-                sql += " AND lqgr.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)"
-            elif dr == 'last3months':
-                sql += " AND lqgr.created_at >= DATE_SUB(NOW(), INTERVAL 3 MONTH)"
-            elif dr == 'last6months':
-                sql += " AND lqgr.created_at >= DATE_SUB(NOW(), INTERVAL 6 MONTH)"
-            elif dr == 'lastyear':
-                sql += " AND lqgr.created_at >= DATE_SUB(NOW(), INTERVAL 1 YEAR)"
+            if dr == 'last7days': date_sql = " AND lqgr.created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)"
+            elif dr == 'last30days': date_sql = " AND lqgr.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)"
+            elif dr == 'last3months': date_sql = " AND lqgr.created_at >= DATE_SUB(NOW(), INTERVAL 3 MONTH)"
+            elif dr == 'last6months': date_sql = " AND lqgr.created_at >= DATE_SUB(NOW(), INTERVAL 6 MONTH)"
+            elif dr == 'lastyear': date_sql = " AND lqgr.created_at >= DATE_SUB(NOW(), INTERVAL 1 YEAR)"
         elif filters.get('start_date') and filters.get('end_date'):
-            sql += " AND lqgr.created_at BETWEEN %s AND %s"
-            params.extend([filters['start_date'], filters['end_date']])
+            date_sql = " AND lqgr.created_at BETWEEN %s AND %s"
+            final_params.extend([filters['start_date'], filters['end_date']])
+            
+        sql += date_sql
         
-        # STEP 6: Execute
-        result = execute_query(sql, params)
+        result = execute_query(sql, final_params)
         count = result[0]['count'] if result else 0
         
-        return jsonify([{'count': count}]), 200
+        # RETURN OBJECT (Fixes the "0" issue on frontend)
+        return jsonify({'count': count}), 200
         
     except Exception as e:
+        logger.error(f"Error in {label} completes: {str(e)}")
         return jsonify({"error": str(e)}), 500
-    
-@app.route('/api/total_riddle_completes', methods=['POST'])
-def get_total_riddle_completes():
-    try:
-        filters = request.get_json() or {}
-        
-        # STEP 1: Remove date-related keys before passing to build_filter_conditions
-        filters_no_date = {
-            k: v for k, v in filters.items()
-            if k not in ('date_range', 'start_date', 'end_date')
-        }
-        
-        # STEP 2: Build base WHERE clause for user demographics
-        where_clause, params = build_filter_conditions(filters_no_date)
-        
-        # STEP 3: Fix ambiguous column references by prefixing with 'u.'
-        if "type != 3" in where_clause:
-            where_clause = where_clause.replace("type != 3", "u.type != 3")
-        for field in ['state', 'city', 'school_code', 'type', 'grade', 'gender']:
-            where_clause = where_clause.replace(f"{field} =", f"u.{field} =")
-        
-        # STEP 4: Build query
-        sql = f"""
-            SELECT COUNT(*) as count 
-            FROM lifeapp.la_quiz_game_results lqgr 
-            INNER JOIN lifeapp.la_quiz_games lqg ON lqg.id = lqgr.la_quiz_game_id 
-            INNER JOIN lifeapp.users u ON u.id = lqgr.user_id 
-            WHERE lqg.type = 3
-              AND {where_clause}
-        """
-        
-        # STEP 5: Apply date filter on lqgr.created_at
-        if filters.get('date_range') and filters['date_range'] != 'All':
-            dr = filters['date_range']
-            if dr == 'last7days':
-                sql += " AND lqgr.created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)"
-            elif dr == 'last30days':
-                sql += " AND lqgr.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)"
-            elif dr == 'last3months':
-                sql += " AND lqgr.created_at >= DATE_SUB(NOW(), INTERVAL 3 MONTH)"
-            elif dr == 'last6months':
-                sql += " AND lqgr.created_at >= DATE_SUB(NOW(), INTERVAL 6 MONTH)"
-            elif dr == 'lastyear':
-                sql += " AND lqgr.created_at >= DATE_SUB(NOW(), INTERVAL 1 YEAR)"
-        elif filters.get('start_date') and filters.get('end_date'):
-            sql += " AND lqgr.created_at BETWEEN %s AND %s"
-            params.extend([filters['start_date'], filters['end_date']])
-        
-        # STEP 6: Execute
-        result = execute_query(sql, params)
-        count = result[0]['count'] if result else 0
-        
-        return jsonify([{'count': count}]), 200
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-    
-@app.route('/api/total_puzzle_completes', methods=['POST'])
-def get_total_puzzle_completes():
-    try:
-        filters = request.get_json() or {}
-        
-        # STEP 1: Remove date-related keys before passing to build_filter_conditions
-        filters_no_date = {
-            k: v for k, v in filters.items()
-            if k not in ('date_range', 'start_date', 'end_date')
-        }
-        
-        # STEP 2: Build base WHERE clause for user demographics
-        where_clause, params = build_filter_conditions(filters_no_date)
-        
-        # STEP 3: Fix ambiguous column references by prefixing with 'u.'
-        if "type != 3" in where_clause:
-            where_clause = where_clause.replace("type != 3", "u.type != 3")
-        for field in ['state', 'city', 'school_code', 'type', 'grade', 'gender']:
-            where_clause = where_clause.replace(f"{field} =", f"u.{field} =")
-        
-        # STEP 4: Build query
-        sql = f"""
-            SELECT COUNT(*) as count 
-            FROM lifeapp.la_mission_completes lamc 
-            INNER JOIN lifeapp.la_missions lam ON lam.id = lamc.la_mission_id 
-            INNER JOIN lifeapp.users u ON u.id = lamc.user_id 
-            WHERE lam.type = 4
-              AND {where_clause}
-        """
-        
-        # STEP 5: Apply date filter on lamc.created_at
-        if filters.get('date_range') and filters['date_range'] != 'All':
-            dr = filters['date_range']
-            if dr == 'last7days':
-                sql += " AND lamc.created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)"
-            elif dr == 'last30days':
-                sql += " AND lamc.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)"
-            elif dr == 'last3months':
-                sql += " AND lamc.created_at >= DATE_SUB(NOW(), INTERVAL 3 MONTH)"
-            elif dr == 'last6months':
-                sql += " AND lamc.created_at >= DATE_SUB(NOW(), INTERVAL 6 MONTH)"
-            elif dr == 'lastyear':
-                sql += " AND lamc.created_at >= DATE_SUB(NOW(), INTERVAL 1 YEAR)"
-        elif filters.get('start_date') and filters.get('end_date'):
-            sql += " AND lamc.created_at BETWEEN %s AND %s"
-            params.extend([filters['start_date'], filters['end_date']])
-        
-        # STEP 6: Execute
-        result = execute_query(sql, params)
-        count = result[0]['count'] if result else 0
-        
-        return jsonify([{'count': count}]), 200
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+          
+
 
 @app.route('/api/PBLsubmissions/total', methods=['GET', 'POST'])
 def get_total_PBLsubmissions():
@@ -3641,12 +3346,11 @@ def get_active_user_count():
     try:
         connection = get_db_connection()
         with connection.cursor() as cursor:
-            # Get filter parameters from request
             filters = {}
-            if request.method == 'POST':
-                filters = request.get_json() or {}
+            if request.method == 'POST': filters = request.get_json() or {}
+            logger.info("--- API CALL: Active User Count ---")
             
-            # Build base query with user joins for filtering
+            
             sql = """
                 SELECT COUNT(DISTINCT lamc.user_id) AS active_users
                 FROM lifeapp.la_mission_completes lamc
@@ -3655,55 +3359,53 @@ def get_active_user_count():
             """
             params = []
             
-            # Add state filter
+            # --- Manually applied filters with prefixing (Logic from your original code) ---
             if filters.get('state') and filters['state'] != 'All':
                 sql += " AND u.state = %s"
                 params.append(filters['state'])
             
-            # Add city filter
             if filters.get('city') and filters['city'] != 'All':
                 sql += " AND u.city = %s"
                 params.append(filters['city'])
             
-            # Add school code filter
+            # IMPORTANT: School Code fix here
             if filters.get('school_code') and filters['school_code'] != 'All':
-                sql += " AND u.school_code = %s"
-                params.append(filters['school_code'])
+                sc = str(filters['school_code']).strip()
+                sql += """
+                    AND (u.school_code = %s OR
+                     (u.type != 3 AND u.school_id IN (
+                         SELECT id FROM lifeapp.schools WHERE code = %s
+                     )))
+                """
+                params.extend([sc, sc])
             
-            # Add user type filter
             if filters.get('user_type') and filters['user_type'] != 'All':
-                type_map = {
-                    'Admin': 1,
-                    'Student': 3,
-                    'Mentor': 4,
-                    'Teacher': 5
-                }
+                type_map = {'Admin': 1, 'Student': 3, 'Mentor': 4, 'Teacher': 5}
                 if filters['user_type'] in type_map:
                     sql += " AND u.type = %s"
                     params.append(type_map[filters['user_type']])
                 elif filters['user_type'] == 'Unspecified':
                     sql += " AND (u.type NOT IN (1,3,4,5) OR u.type IS NULL)"
             
-            # Add grade filter
             if filters.get('grade') and filters['grade'] != 'All':
                 grade_num = filters['grade'].replace('Grade ', '')
                 if grade_num.isdigit():
                     sql += " AND u.grade = %s"
                     params.append(int(grade_num))
             
-            # Add date range filter
+            # Gender
+            if filters.get('gender') and filters['gender'] != 'All':
+                if filters['gender'] == 'Male': sql += " AND u.gender = 0"
+                elif filters['gender'] == 'Female': sql += " AND u.gender = 1"
+                elif filters['gender'] == 'Other': sql += " AND u.gender NOT IN (0, 1)"
+
             if filters.get('date_range') and filters['date_range'] != 'All':
-                date_filter = filters['date_range']
-                if date_filter == 'last7days':
-                    sql += " AND lamc.created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)"
-                elif date_filter == 'last30days':
-                    sql += " AND lamc.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)"
-                elif date_filter == 'last3months':
-                    sql += " AND lamc.created_at >= DATE_SUB(NOW(), INTERVAL 3 MONTH)"
-                elif date_filter == 'last6months':
-                    sql += " AND lamc.created_at >= DATE_SUB(NOW(), INTERVAL 6 MONTH)"
-                elif date_filter == 'lastyear':
-                    sql += " AND lamc.created_at >= DATE_SUB(NOW(), INTERVAL 1 YEAR)"
+                dr = filters['date_range']
+                if dr == 'last7days': sql += " AND lamc.created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)"
+                elif dr == 'last30days': sql += " AND lamc.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)"
+                elif dr == 'last3months': sql += " AND lamc.created_at >= DATE_SUB(NOW(), INTERVAL 3 MONTH)"
+                elif dr == 'last6months': sql += " AND lamc.created_at >= DATE_SUB(NOW(), INTERVAL 6 MONTH)"
+                elif dr == 'lastyear': sql += " AND lamc.created_at >= DATE_SUB(NOW(), INTERVAL 1 YEAR)"
                     
             cursor.execute(sql, params)
             result = cursor.fetchall()
@@ -5829,6 +5531,7 @@ def mission_search():
             LEFT JOIN lifeapp.users t ON ma.teacher_id = t.id
             LEFT JOIN lifeapp.schools s ON u.school_id = s.id
             LEFT JOIN lifeapp.media mia ON mia.id = mc.media_id
+            WHERE mc.status != 'skipped'
         )
         SELECT * FROM cte
         WHERE 1=1
@@ -5914,6 +5617,85 @@ def mission_search():
     finally:
         connection.close()
         print("Connection closed.")
+
+@app.route('/api/get_mission_by_id', methods=['POST'])
+def get_mission_by_id():
+    try:
+        data = request.get_json()
+        mission_id = data.get('mission_id')
+        if not mission_id:
+            return jsonify({'error': 'mission_id is required'}), 400
+
+        connection = get_db_connection()
+        with connection.cursor() as cursor:
+            # Reuse the same query logic as in /api/missions_resource but for one ID
+            base_query = """
+                SELECT
+                    lam.id,
+                    lam.title,
+                    lam.description,
+                    lam.question,
+                    lam.type,
+                    CASE WHEN lam.allow_for=1 THEN 'All' ELSE 'Teacher' END AS allow_for,
+                    lam.la_subject_id AS subject_id,
+                    las.title         AS subject,
+                    lam.la_level_id   AS level_id,
+                    lal.title         AS level,
+                    lam.status        AS status,
+                    lam.index         AS mission_index,
+                    JSON_UNQUOTE(JSON_EXTRACT(lam.image, '$.en')) AS image_id,
+                    mimg.path         AS image_path,
+                    lamr.id           AS resource_id,
+                    document.id       AS media_id,
+                    document.path     AS resource_path,
+                    lamr.index        AS idx
+                FROM lifeapp.la_missions lam
+                JOIN lifeapp.la_subjects las ON las.id = lam.la_subject_id
+                JOIN lifeapp.la_levels   lal ON lal.id = lam.la_level_id
+                LEFT JOIN lifeapp.media mimg ON mimg.id = JSON_UNQUOTE(JSON_EXTRACT(lam.image, '$.en'))
+                LEFT JOIN lifeapp.la_mission_resources lamr ON lamr.la_mission_id = lam.id
+                LEFT JOIN lifeapp.media document ON document.id = lamr.media_id
+                WHERE lam.id = %s
+                ORDER BY lamr.index
+            """
+            cursor.execute(base_query, (mission_id,))
+            rows = cursor.fetchall()
+            
+            if not rows:
+                return jsonify({'error': 'Mission not found'}), 404
+
+            base_url = os.getenv('BASE_URL', '')
+            mission = {
+                'id': rows[0]['id'],
+                'title': rows[0]['title'],
+                'description': rows[0]['description'],
+                'question': rows[0]['question'],
+                'type': rows[0]['type'],
+                'allow_for': rows[0]['allow_for'],
+                'subject_id': rows[0]['subject_id'],
+                'subject': rows[0]['subject'],
+                'level_id': rows[0]['level_id'],
+                'level': rows[0]['level'],
+                'status': rows[0]['status'],
+                'index': rows[0]['mission_index'],
+                'image_id': rows[0]['image_id'],
+                'image_url': f"{base_url}/{rows[0]['image_path']}" if rows[0].get('image_path') else None,
+                'resources': []
+            }
+            for row in rows:
+                if row.get('resource_id'):
+                    mission['resources'].append({
+                        'resource_id': row['resource_id'],
+                        'media_id': row['media_id'],
+                        'url': f"{base_url}/{row['resource_path']}"
+                    })
+
+            return jsonify(mission), 200
+    except Exception as e:
+        print("Error in get_mission_by_id:", e)
+        return jsonify({'error': str(e)}), 500
+    finally:
+        connection.close()
 
 @app.route('/api/update_mission_status', methods=['POST'])
 def update_mission_status():
@@ -10990,12 +10772,14 @@ def correction_tamil_nadu_users():
 ##################### RESOURCES/STUDENT_RELATED/MISSION APIs ######################
 ###################################################################################
 ###################################################################################
+
 @app.route('/api/missions_resource', methods=['POST'])
 def get_missions_resource():
     try:
         filters = request.json
         connection = get_db_connection()
         with connection.cursor() as cursor:
+            # Base query remains the same
             base_query = """
                 SELECT
                     lam.id,
@@ -11030,20 +10814,32 @@ def get_missions_resource():
             if filters.get('status'):
                 base_query += " AND lam.status = %s"
                 params.append(filters['status'])
+            
             if filters.get('type'):
                 base_query += " AND lam.type = %s"
                 params.append(filters['type'])
+            
             if filters.get('subject'):
                 base_query += " AND lam.la_subject_id = %s"
                 params.append(filters['subject'])
+            
             if filters.get('level'):
                 base_query += " AND lam.la_level_id = %s"
                 params.append(filters['level'])
+
+            # --- NEW: SEARCH LOGIC ---
+            # We extract the 'en' value from the JSON and perform a wildcard LIKE search
+            if filters.get('title'):
+                base_query += " AND LOWER(JSON_UNQUOTE(JSON_EXTRACT(lam.title, '$.en'))) LIKE LOWER(%s)"
+                params.append(f"%{filters['title']}%")
+            # -------------------------
 
             base_query += " ORDER BY lam.id, lamr.index"
             cursor.execute(base_query, params)
             rows = cursor.fetchall()
 
+            # ... (Rest of your processing logic remains exactly the same) ...
+            
             base_url = os.getenv('BASE_URL', '')
             missions = {}
             for row in rows:
