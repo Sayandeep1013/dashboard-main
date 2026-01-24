@@ -68,7 +68,6 @@ def admin_login():
     email = data.get('email')
     password = data.get('password')
     cursor = get_db_connection().cursor(pymysql.cursors.DictCursor)
-
     cursor.execute("SELECT id, email, password, type FROM users WHERE email=%s AND type=1", (email,))
     user = cursor.fetchone()
 
@@ -3137,6 +3136,7 @@ def mission_search():
     to_date = filters.get('to_date')
     page = int(filters.get('page', 1))
     per_page = int(filters.get('per_page', 50))
+    user_type = int(filters.get('user_type', 3))
     offset = (page - 1) * per_page
 
     print(f"🔎 Filters received: {filters}")
@@ -3177,6 +3177,7 @@ def mission_search():
                 mia.path AS media_path
             FROM lifeapp.la_mission_completes mc
             JOIN lifeapp.users u ON mc.user_id = u.id
+                AND u.type = %s
             JOIN lifeapp.la_missions m 
                 ON m.id = mc.la_mission_id
             LEFT JOIN lifeapp.la_mission_assigns ma 
@@ -3189,7 +3190,7 @@ def mission_search():
         WHERE 1=1
     """
 
-    params = []
+    params = [user_type]
     if mission_acceptance and mission_acceptance in ("Approved", "Requested", "Rejected"):
         sql += " AND cte.Status = %s"
         params.append(mission_acceptance)
@@ -3468,6 +3469,7 @@ def fetch_vision_sessions():
     qs          = request.args
     page        = int(qs.get('page', 1))
     per_page    = int(qs.get('per_page', 25))
+    user_type = int(qs.get('user_type',3))
     offset      = (page - 1) * per_page
     qtype       = qs.get('question_type')
     assigned_by = qs.get('assigned_by')
@@ -3496,7 +3498,7 @@ def fetch_vision_sessions():
     FROM vision_question_answers a
     JOIN visions v          ON v.id = a.vision_id
     JOIN vision_questions q ON q.id = a.question_id
-    JOIN users u            ON u.id = a.user_id
+    JOIN users u            ON u.id = a.user_id AND u.type = %s
     LEFT JOIN vision_assigns vs 
       ON vs.vision_id = a.vision_id 
      AND vs.student_id = a.user_id
@@ -3505,7 +3507,7 @@ def fetch_vision_sessions():
     LEFT JOIN lifeapp.schools s ON s.id = u.school_id
     WHERE 1=1
     '''
-    params = []
+    params = [user_type]
 
     if qtype:
         base_sql += ' AND a.answer_type = %s';    params.append(qtype)
