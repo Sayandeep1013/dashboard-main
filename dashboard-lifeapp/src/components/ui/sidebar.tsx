@@ -2,7 +2,13 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { Home, ChevronDown, Terminal } from "lucide-react";
+import {
+  Home,
+  ChevronDown,
+  Terminal,
+  Database,
+  ArrowLeftRight,
+} from "lucide-react";
 import { useEffect, useState } from "react";
 import {
   IconBackpack,
@@ -94,6 +100,55 @@ const NavItem = ({
   );
 };
 
+/* ----------  NEW: tiny hooks & toggle component  ---------- */
+const useDbMode = () => {
+  const [mode, setMode] = useState<"prod" | "staging">("prod");
+  useEffect(() => {
+    fetch("/api/db-mode")
+      .then((r) => r.json())
+      .then((d) => setMode(d.mode))
+      .catch(() => {});
+  }, []);
+  return mode;
+};
+
+const DbToggle = () => {
+  const mode = useDbMode();
+  const [loading, setLoading] = useState(false);
+  const toggle = async () => {
+    setLoading(true);
+    await fetch("/api/toggle-db", { method: "POST" });
+    window.location.reload(); // fresh data from new DB
+  };
+  return (
+    <div className="px-4 pb-3">
+      <button
+        onClick={toggle}
+        disabled={loading}
+        className={cn(
+          "w-full flex items-center justify-between rounded-xl px-3 py-2 text-sm transition",
+          "bg-gray-900/50 text-gray-300 ring-1 ring-gray-700 hover:ring-gray-600",
+          "backdrop-blur-sm"
+        )}
+      >
+        <span className="flex items-center gap-2">
+          <Database className="h-4 w-4" />
+          <span
+            className={cn(
+              "font-medium",
+              mode === "prod" ? "text-emerald-400" : "text-orange-400"
+            )}
+          >
+            {mode === "prod" ? "Production" : "Staging"}
+          </span>
+        </span>
+        <ArrowLeftRight className="h-4 w-4 text-gray-500" />
+      </button>
+    </div>
+  );
+};
+/* ----------  END NEW  ---------- */
+
 export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
@@ -111,7 +166,6 @@ export function Sidebar() {
 
   useEffect(() => {
     const newOpenSections = { ...openSections };
-
     if (pathname.startsWith("/students")) newOpenSections.students = true;
     if (pathname.startsWith("/teachers")) {
       newOpenSections.teachers = true;
@@ -133,23 +187,16 @@ export function Sidebar() {
       newOpenSections.resources = true;
       newOpenSections.student_related = true;
     }
-
     setOpenSections(newOpenSections);
   }, [pathname]);
 
   const toggleSection = (section: keyof typeof openSections) => {
-    setOpenSections((prev) => ({
-      ...prev,
-      [section]: !prev[section],
-    }));
+    setOpenSections((prev) => ({ ...prev, [section]: !prev[section] }));
   };
 
   const handleLogout = async () => {
     try {
-      await fetch("/api/logout", {
-        method: "POST",
-        credentials: "include",
-      });
+      await fetch("/api/logout", { method: "POST", credentials: "include" });
       router.push("/login");
     } catch (error) {
       console.error("Logout failed", error);
@@ -209,8 +256,6 @@ export function Sidebar() {
           {openSections.teachers && (
             <div className="space-y-0.5 ml-5">
               <NavItem href="/teachers/dashboard" label="Dashboard" isNested />
-              <NavItem href="/teachers/mission" label="Mission" isNested />
-              <NavItem href="/teachers/vision" label="Vision" isNested />
               <NavItem
                 href="/teachers/coupons_redeemed"
                 label="Coupon Redeemed"
@@ -380,6 +425,8 @@ export function Sidebar() {
               <NavItem href="/settings/topics" label="Topics" isNested />
               <NavItem href="/settings/category" label="Category" isNested />
               <NavItem href="/settings/coupons" label="Coupons" isNested />
+              <NavItem href="/settings/faqs" label="FAQs" isNested />
+              <NavItem href="/settings/chapters" label="Chapters" isNested />
               <NavItem
                 href="/settings/notifications"
                 label="Notifications"
@@ -412,14 +459,18 @@ export function Sidebar() {
         </nav>
       </div>
 
-      <div className="p-4 border-t border-gray-800">
-        <button
-          onClick={handleLogout}
-          className="flex items-center gap-2 px-3 py-2 text-sm text-gray-300 hover:bg-gray-800/50 hover:text-white w-full text-left"
-        >
-          <IconLogout className="h-3 w-3" />
-          <span>Logout</span>
-        </button>
+      {/* ----------   TOGGLE +  LOGOUT  ---------- */}
+      <div>
+        <DbToggle />
+        <div className="p-4">
+          <button
+            onClick={handleLogout}
+            className="flex items-center gap-2 px-3 py-2 text-sm text-gray-300 hover:bg-gray-800/50 hover:text-white w-full text-left"
+          >
+            <IconLogout className="h-3 w-3" />
+            <span>Logout</span>
+          </button>
+        </div>
       </div>
     </div>
   );

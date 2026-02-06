@@ -2,3 +2,5 @@
 .vercel
 .local.env
 backend
+.vscode/
+.venv/

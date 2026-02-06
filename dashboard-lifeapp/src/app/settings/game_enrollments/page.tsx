@@ -7,9 +7,11 @@ import { Sidebar } from '@/components/ui/sidebar';
 import '@tabler/core/dist/css/tabler.min.css';
 import { IconEdit, IconPlus, IconTrash } from '@tabler/icons-react';
 
-//const api_startpoint = 'https://lifeapp-api-vv1.vercel.app'
-const api_startpoint = 'http://152.42.239.141:5000'
-// const api_startpoint = 'http://152.42.239.141:5000'
+// const api_startpoint = "http://localhost:5000";
+// const api_startpoint = 'https://lifeapp-api-vv1.vercel.app'
+// const api_startpoint = "http://152.42.239.141:5000";
+const api_startpoint = "https://admin-api.life-lab.org";
+
 // Define TypeScript types for Enrollment
 type Enrollment = {
   id: number;

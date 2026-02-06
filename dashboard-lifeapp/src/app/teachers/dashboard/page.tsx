@@ -7,6 +7,7 @@ import React from "react";
 import { Inter } from "next/font/google";
 const inter = Inter({ subsets: ["latin"] });
 import { Sidebar } from "@/components/ui/sidebar";
+import { IconChevronLeft, IconChevronRight } from "@tabler/icons-react";
 import {
   IconSearch,
   IconBell,
@@ -50,6 +51,56 @@ import PreviousMap from "postcss/lib/previous-map";
 // }
 
 const ReactECharts = dynamic(() => import("echarts-for-react"), { ssr: false });
+
+const tableStyles = `
+  <style>
+    .table-container {
+      position: relative;
+    }
+    
+    .scroll-hint-left, .scroll-hint-right {
+      position: absolute;
+      top: 50%;
+      transform: translateY(-50%);
+      background: rgba(111, 66, 193, 0.9);
+      color: white;
+      padding: 12px 16px;
+      border-radius: 10%;
+      cursor: pointer;
+      z-index: 5;
+      transition: opacity 0.3s;
+      border: none;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+    }
+    
+    .scroll-hint-left {
+      left: 15px;
+    }
+    
+    .scroll-hint-right {
+      right: 15px;
+    }
+    
+    .scroll-hint-hidden {
+      opacity: 0;
+      pointer-events: none;
+    }
+    
+    /* Sticky table header */
+    .table-sticky-header thead th {
+      position: sticky;
+      top: 0;
+      background: #f8f9fa;
+      z-index: 1;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    
+    /* Smooth scrolling */
+    .smooth-scroll {
+      scroll-behavior: smooth;
+    }
+  </style>
+`;
 
 interface DemographData {
   state: string;
@@ -281,9 +332,11 @@ function SearchableDropdown({
   );
 }
 
+// const api_startpoint = "http://localhost:5000";
 // const api_startpoint = 'https://lifeapp-api-vv1.vercel.app'
-//const api_startpoint = "http://localhost:5000";
-const api_startpoint = "http://152.42.239.141:5000";
+// const api_startpoint = "http://152.42.239.141:5000";
+const api_startpoint = "https://admin-api.life-lab.org";
+
 
 export default function TeachersDashboard() {
   const [states, setStates] = useState<string[]>([]);
@@ -339,11 +392,14 @@ export default function TeachersDashboard() {
 
     setIsCitiesLoading(true);
     try {
-      const res = await fetch(`${api_startpoint}/api/city_list_teachers`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ state: state }),
-      });
+      const res = await fetch(
+        `${api_startpoint}/api/city_list_teacher_dashboard`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ state: state }),
+        }
+      );
 
       if (!res.ok) {
         throw new Error(`HTTP error! Status: ${res.status}`);
@@ -399,11 +455,15 @@ export default function TeachersDashboard() {
 
     setIsAddCitiesLoading(true);
     try {
-      const res = await fetch(`${api_startpoint}/api/city_list_teachers`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ state: state }),
-      });
+      const res = await fetch(
+        `${api_startpoint}/api/city_list_teacher_dashboard`,
+        {
+          // Updated endpoint URL
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ state: state }),
+        }
+      );
 
       if (!res.ok) {
         throw new Error(`HTTP error! Status: ${res.status}`);
@@ -449,11 +509,14 @@ export default function TeachersDashboard() {
 
     setIsEditCitiesLoading(true);
     try {
-      const res = await fetch(`${api_startpoint}/api/city_list_teachers`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ state: state }),
-      });
+      const res = await fetch(
+        `${api_startpoint}/api/city_list_teacher_dashboard`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ state: state }),
+        }
+      );
 
       if (!res.ok) {
         throw new Error(`HTTP error! Status: ${res.status}`);
@@ -530,7 +593,7 @@ export default function TeachersDashboard() {
   const [selectedLifeLab, setSelectedLifeLab] = useState<string>("");
   const [tableData, setTableData] = useState<any[]>([]);
   const [currentPage, setCurrentPage] = useState<number>(0);
-  const rowsPerPage = 50;
+  const rowsPerPage = 15;
   const [isTableLoading, setIsTableLoading] = useState(false);
   const [selectedFromDate, setSelectedFromDate] = useState(""); // New state for From Date
   const [selectedToDate, setSelectedToDate] = useState(""); // New state for To Date
@@ -588,6 +651,42 @@ export default function TeachersDashboard() {
   const [boardsList, setBoardsList] = useState<{ id: string; name: string }[]>(
     []
   );
+
+  const tableContainerRef = useRef<HTMLDivElement>(null);
+  const [showLeftHint, setShowLeftHint] = useState(false);
+  const [showRightHint, setShowRightHint] = useState(true);
+
+  // functions for table scrolling
+
+  const updateScrollHints = () => {
+    const container = tableContainerRef.current;
+    if (container) {
+      const { scrollLeft, scrollWidth, clientWidth } = container;
+      setShowLeftHint(scrollLeft > 10);
+      setShowRightHint(scrollLeft < scrollWidth - clientWidth - 10);
+    }
+  };
+
+  const handleTableScroll = () => {
+    updateScrollHints();
+  };
+
+  const scrollTableHorizontally = (direction: "left" | "right") => {
+    if (tableContainerRef.current) {
+      const container = tableContainerRef.current;
+      const scrollAmount = container.clientWidth * 0.8;
+
+      container.scrollTo({
+        left:
+          direction === "left"
+            ? container.scrollLeft - scrollAmount
+            : container.scrollLeft + scrollAmount,
+        behavior: "smooth",
+      });
+
+      setTimeout(updateScrollHints, 300);
+    }
+  };
 
   // Fetch boards
   useEffect(() => {
@@ -1779,6 +1878,7 @@ export default function TeachersDashboard() {
   //     };
   return (
     <div className={`page bg-light ${inter.className} font-sans`}>
+      <div dangerouslySetInnerHTML={{ __html: tableStyles }} />
       <Sidebar />
 
       {/* Main Content */}
@@ -2485,72 +2585,100 @@ export default function TeachersDashboard() {
                       </div>
                     </div>
                   ) : (
-                    <>
-                      <table className="table table-striped">
-                        <thead>
-                          <tr>
-                            <th>ID</th>
-                            <th>Name</th>
-                            <th>Email</th>
-                            <th>Mobile</th>
-                            <th>City</th>
-                            <th>State</th>
-                            <th>School Name</th>
-                            <th>School Code</th>
-                            <th>Mission Assign Count</th>
-                            <th>Vision Assign Count</th>
-                            <th>Earn Coins</th>
-                            <th>Is Life Lab</th>
-                            <th>Created At</th>
-                            <th>Updated At</th>
-                            <th>Subject</th>
-                            <th>Grade</th>
-                            <th>Section</th>
-                            <th>Board</th>
-                            <th>Actions</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {paginatedData.map((row, index) => (
-                            <tr key={index}>
-                              <td>{row.id}</td>
-                              <td>{row.name}</td>
-                              <td>{row.email}</td>
-                              <td>{row.mobile_no}</td>
-                              <td>{row.city}</td>
-                              <td>{row.state}</td>
-                              <td>{row.school_name}</td>
-                              <td>{row.school_code}</td>
-                              <td>{row.mission_assigned_count}</td>
-                              <td>{row.vision_assigned_count}</td>
-                              <td>{row.earn_coins}</td>
-                              <td>{row.is_life_lab}</td>
-                              <td>{row.created_at}</td>
-                              <td>{row.updated_at}</td>
-                              <td>
-                                {JSON.parse(row.title || '{"en":""}')?.en}
-                              </td>
-                              <td>{row.grade_name}</td>
-                              <td>{row.section_name}</td>
-                              <td>{row.board_name}</td>
-                              <td>
-                                <button
-                                  className="btn btn-sm btn-primary me-2 "
-                                  onClick={() => handleEdit(row)}
-                                >
-                                  <IconEdit size={16} />
-                                </button>
-                                <button
-                                  className="btn btn-sm btn-danger "
-                                  onClick={() => handleDelete(row)}
-                                >
-                                  <IconTrash size={16} />
-                                </button>
-                              </td>
+                    <div className="table-container">
+                      {/* Scroll hints for visual indication */}
+                      <button
+                        className={`scroll-hint-left ${
+                          !showLeftHint ? "scroll-hint-hidden" : ""
+                        }`}
+                        onClick={() => scrollTableHorizontally("left")}
+                        aria-label="Scroll left"
+                      >
+                        <IconChevronLeft size={24} />
+                      </button>
+                      <button
+                        className={`scroll-hint-right ${
+                          !showRightHint ? "scroll-hint-hidden" : ""
+                        }`}
+                        onClick={() => scrollTableHorizontally("right")}
+                        aria-label="Scroll right"
+                      >
+                        <IconChevronRight size={24} />
+                      </button>
+
+                      {/* Table with sticky headers and smooth scrolling */}
+                      <div
+                        ref={tableContainerRef}
+                        className="overflow-x-scroll smooth-scroll rounded-lg shadow"
+                        onScroll={handleTableScroll}
+                        style={{ maxHeight: "70vh", overflowY: "auto" }}
+                      >
+                        <table className="table table-striped table-sticky-header w-full">
+                          <thead>
+                            <tr>
+                              <th>ID</th>
+                              <th>Name</th>
+                              <th>Email</th>
+                              <th>Mobile</th>
+                              <th>City</th>
+                              <th>State</th>
+                              <th>School Name</th>
+                              <th>School Code</th>
+                              <th>Mission Assign Count</th>
+                              <th>Vision Assign Count</th>
+                              <th>Earn Coins</th>
+                              <th>Is Life Lab</th>
+                              <th>Created At</th>
+                              <th>Updated At</th>
+                              <th>Subject</th>
+                              <th>Grade</th>
+                              <th>Section</th>
+                              <th>Board</th>
+                              <th>Actions</th>
                             </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                          </thead>
+                          <tbody>
+                            {paginatedData.map((row, index) => (
+                              <tr key={index}>
+                                <td>{row.id}</td>
+                                <td>{row.name}</td>
+                                <td>{row.email}</td>
+                                <td>{row.mobile_no}</td>
+                                <td>{row.city}</td>
+                                <td>{row.state}</td>
+                                <td>{row.school_name}</td>
+                                <td>{row.school_code}</td>
+                                <td>{row.mission_assigned_count}</td>
+                                <td>{row.vision_assigned_count}</td>
+                                <td>{row.earn_coins}</td>
+                                <td>{row.is_life_lab}</td>
+                                <td>{row.created_at}</td>
+                                <td>{row.updated_at}</td>
+                                <td>
+                                  {JSON.parse(row.title || '{"en":""}')?.en}
+                                </td>
+                                <td>{row.grade_name}</td>
+                                <td>{row.section_name}</td>
+                                <td>{row.board_name}</td>
+                                <td>
+                                  <button
+                                    className="btn btn-sm btn-primary me-2 "
+                                    onClick={() => handleEdit(row)}
+                                  >
+                                    <IconEdit size={16} />
+                                  </button>
+                                  <button
+                                    className="btn btn-sm btn-danger "
+                                    onClick={() => handleDelete(row)}
+                                  >
+                                    <IconTrash size={16} />
+                                  </button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
 
                       {/* Pagination Controls */}
                       <div className="d-flex justify-content-between mt-3">
@@ -2585,7 +2713,7 @@ export default function TeachersDashboard() {
                           Next
                         </button>
                       </div>
-                    </>
+                    </div>
                   )}
                 </div>
               </div>

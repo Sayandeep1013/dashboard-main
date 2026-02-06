@@ -9,9 +9,10 @@ import { Sidebar } from '@/components/ui/sidebar';
 import { IconSearch, IconBell, IconSettings, IconDownload, IconX, IconTrash, IconEdit, IconPlus, IconFilterOff } from '@tabler/icons-react';
 import { ChevronDown } from 'lucide-react';
 
+// const api_startpoint = "http://localhost:5000";
 // const api_startpoint = 'https://lifeapp-api-vv1.vercel.app'
-const api_startpoint = 'http://152.42.239.141:5000'
-// const api_startpoint = 'http://152.42.239.141:5000'
+// const api_startpoint = "http://152.42.239.141:5000";
+const api_startpoint = "https://admin-api.life-lab.org";
 
 export default function SettingsActivityType() {
     const activityTypes = [

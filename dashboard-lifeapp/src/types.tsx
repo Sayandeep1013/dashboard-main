@@ -1,13 +1,9 @@
 import { JSX } from "react";
 
 export type SideNavItem = {
-  title: string;
-  path: string;
-  icon?: JSX.Element;
-  submenu?: boolean;
-  subMenuItems?: SideNavItem[];
-};
-
-export type UserType = {
-  user_type: number
-}
+    title: string;
+    path: string;
+    icon?: JSX.Element;
+    submenu?: boolean;
+    subMenuItems?: SideNavItem[];
+  };

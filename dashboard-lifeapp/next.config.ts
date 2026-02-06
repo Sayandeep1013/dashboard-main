@@ -1,7 +1,16 @@
-import type { NextConfig } from "next";
+const nextConfig = {
+  async rewrites() {
+    const isProd = process.env.NODE_ENV === 'production';
 
-const nextConfig: NextConfig = {
-  /* config options here */
+    return [
+      {
+        source: '/api/:path*',
+        destination: isProd
+          ? 'http://152.42.239.141:5000/api/:path*'   // production
+          : 'http://127.0.0.1:5000/api/:path*',       // local dev
+      },
+    ];
+  },
 };
 
-export default nextConfig;
+module.exports = nextConfig;

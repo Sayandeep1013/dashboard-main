@@ -22,6 +22,8 @@ import {
   IconDeviceAnalytics,
   IconEdit,
   IconTrash,
+  IconChevronLeft,
+  IconChevronRight,
 } from "@tabler/icons-react";
 
 import ReactECharts from "echarts-for-react";
@@ -56,6 +58,57 @@ import dynamic from "next/dynamic";
 const HighchartsReact = dynamic(() => import("highcharts-react-official"), {
   ssr: false,
 });
+
+// Add CSS styles for the new features
+const tableStyles = `
+  <style>
+    .table-container {
+      position: relative;
+    }
+    
+    .scroll-hint-left, .scroll-hint-right {
+      position: absolute;
+      top: 50%;
+      transform: translateY(-50%);
+      background: rgba(111, 66, 193, 0.9);
+      color: white;
+      padding: 12px 16px;
+      border-radius: 10%;
+      cursor: pointer;
+      z-index: 5;
+      transition: opacity 0.3s;
+      border: none;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+    }
+    
+    .scroll-hint-left {
+      left: 15px;
+    }
+    
+    .scroll-hint-right {
+      right: 15px;
+    }
+    
+    .scroll-hint-hidden {
+      opacity: 0;
+      pointer-events: none;
+    }
+    
+    /* Sticky table header */
+    .table-sticky-header thead th {
+      position: sticky;
+      top: 0;
+      background: #f8f9fa;
+      z-index: 1;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    
+    /* Smooth scrolling */
+    .smooth-scroll {
+      scroll-behavior: smooth;
+    }
+  </style>
+`;
 
 // import Highcharts from 'highcharts/highmaps';
 // const Highcharts = dynamic(() => import('highcharts/highmaps'), { ssr: false });
@@ -315,9 +368,10 @@ function SearchableDropdown({
   );
 }
 
-// const api_startpoint = 'https://lifeapp-api-vv1.vercel.app'
 // const api_startpoint = "http://localhost:5000";
+// const api_startpoint = 'https://lifeapp-api-vv1.vercel.app'
 const api_startpoint = "http://152.42.239.141:5000";
+// const api_startpoint = "https://admin-api.life-lab.org";
 
 export default function StudentDashboard() {
   const [selectedVisionAcceptance, setSelectedVisionAcceptance] = useState("");
@@ -659,7 +713,7 @@ export default function StudentDashboard() {
   const [inputCode, setInputCode] = useState("");
   // Update existing state declaration
   const [selectedSchoolCode, setSelectedSchoolCode] = useState<string[]>([]);
-  const rowsPerPage = 50;
+  const rowsPerPage = 15;
   const [isTableLoading, setIsTableLoading] = useState(false);
   // Handler for search button
   const handleSearch = async () => {
@@ -703,6 +757,59 @@ export default function StudentDashboard() {
     }
   };
 
+  // Refs for table scrolling functionality
+  const tableContainerRef = useRef<HTMLDivElement>(null);
+  const [showLeftHint, setShowLeftHint] = useState(false);
+  const [showRightHint, setShowRightHint] = useState(true);
+
+  // Update scroll hints based on current scroll position
+  const updateScrollHints = () => {
+    const container = tableContainerRef.current;
+    if (container) {
+      const { scrollLeft, scrollWidth, clientWidth } = container;
+      setShowLeftHint(scrollLeft > 10);
+      setShowRightHint(scrollLeft < scrollWidth - clientWidth - 10);
+    }
+  };
+
+  // Handle scroll events to show/hide scroll hints
+  const handleTableScroll = () => {
+    updateScrollHints();
+  };
+
+  // Scroll table horizontally with larger increments and smooth behavior
+  const scrollTableHorizontally = (direction: "left" | "right") => {
+    if (tableContainerRef.current) {
+      const container = tableContainerRef.current;
+      const scrollAmount = container.clientWidth * 0.8; // Scroll 80% of viewport width
+
+      container.scrollTo({
+        left:
+          direction === "left"
+            ? container.scrollLeft - scrollAmount
+            : container.scrollLeft + scrollAmount,
+        behavior: "smooth",
+      });
+
+      // Update hints after scroll
+      setTimeout(updateScrollHints, 300);
+    }
+  };
+
+  // Update scroll hints when data changes
+  useEffect(() => {
+    setTimeout(() => {
+      updateScrollHints();
+    }, 100);
+  }, [tableData]);
+
+  // Update scroll hints on window resize
+  useEffect(() => {
+    window.addEventListener("resize", updateScrollHints);
+    return () => {
+      window.removeEventListener("resize", updateScrollHints);
+    };
+  }, []);
   // Determine paginated data
   const paginatedData = tableData.slice(
     currentPage * rowsPerPage,
@@ -3306,6 +3413,9 @@ export default function StudentDashboard() {
 
   return (
     <div className={`page bg-light ${inter.className} font-sans`}>
+      {/* Inject CSS styles */}
+      <div dangerouslySetInnerHTML={{ __html: tableStyles }} />
+
       <Sidebar />
 
       {/* Main Content */}
@@ -5537,7 +5647,7 @@ export default function StudentDashboard() {
 
             {/* Paginated Results Table */}
             <div className="card shadow-sm border-0 mt-2">
-              <div className="card-body overflow-x-scroll">
+              <div className="card-body">
                 <h5 className="card-title mb-4">
                   Results- {tableData.length} students found
                 </h5>
@@ -5565,80 +5675,108 @@ export default function StudentDashboard() {
                     </div>
                   </div>
                 ) : (
-                  <>
-                    <table className="table table-striped">
-                      <thead>
-                        <tr>
-                          <th>ID</th>
-                          <th>Name</th>
-                          <th>School</th>
-                          <th>Guardian</th>
-                          <th>Email</th>
-                          <th>Username</th>
-                          <th>Mobile</th>
-                          <th>DOB</th>
-                          <th>User Type</th>
-                          <th>Grade</th>
-                          <th>City</th>
-                          <th>State</th>
-                          <th>Address</th>
-                          <th>Earn Coins</th>
-                          <th>Heart Coins</th>
-                          <th>Brain Coins</th>
-                          <th>School ID</th>
-                          <th>School Code</th>
-                          <th>Registered At</th>
-                          <th>Mission Requested</th>
-                          <th>Mission Approved</th>
-                          <th>Vision Requested</th>
-                          <th>Vision Approved</th>
-                          <th>Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {paginatedData.map((row, index) => (
-                          <tr key={index}>
-                            <td>{row.id}</td>
-                            <td>{row.name}</td>
-                            <td>{row.school_name}</td>
-                            <td>{row.guardian_name}</td>
-                            <td>{row.email}</td>
-                            <td>{row.username}</td>
-                            <td>{row.mobile_no}</td>
-                            <td>{row.dob}</td>
-                            <td>{row.user_type}</td>
-                            <td>{row.grade}</td>
-                            <td>{row.city}</td>
-                            <td>{row.state}</td>
-                            <td>{row.address}</td>
-                            <td>{row.earn_coins}</td>
-                            <td>{row.heart_coins}</td>
-                            <td>{row.brain_coins}</td>
-                            <td>{row.school_id}</td>
-                            <td>{row.school_code}</td>
-                            <td>{row.registered_at}</td>
-                            <td>{row.total_missions_requested || 0}</td>
-                            <td>{row.total_missions_accepted || 0}</td>
-                            <td>{row.total_visions_requested || 0}</td>
-                            <td>{row.total_visions_accepted || 0}</td>
-                            <td>
-                              <button
-                                className="btn btn-sm btn-primary me-2 "
-                                onClick={() => openEdit(row)}
-                              >
-                                <IconEdit size={16} />
-                              </button>
-                              <button
-                                className="btn btn-sm btn-danger "
-                                onClick={() => openDelete(row)}
-                              >
-                                <IconTrash size={16} />
-                              </button>
-                            </td>
+                  <div className="table-container">
+                    {/* Scroll hints for visual indication */}
+                    <button
+                      className={`scroll-hint-left ${
+                        !showLeftHint ? "scroll-hint-hidden" : ""
+                      }`}
+                      onClick={() => scrollTableHorizontally("left")}
+                      aria-label="Scroll left"
+                    >
+                      <IconChevronLeft size={24} />
+                    </button>
+                    <button
+                      className={`scroll-hint-right ${
+                        !showRightHint ? "scroll-hint-hidden" : ""
+                      }`}
+                      onClick={() => scrollTableHorizontally("right")}
+                      aria-label="Scroll right"
+                    >
+                      <IconChevronRight size={24} />
+                    </button>
+
+                    {/* Table with sticky headers and smooth scrolling */}
+                    <div
+                      ref={tableContainerRef}
+                      className="overflow-x-scroll smooth-scroll"
+                      onScroll={handleTableScroll}
+                      style={{ maxHeight: "70vh", overflowY: "auto" }}
+                    >
+                      <table className="table table-striped table-sticky-header">
+                        <thead>
+                          <tr>
+                            <th>ID</th>
+                            <th>Name</th>
+                            <th>School</th>
+                            <th>Guardian</th>
+                            <th>Email</th>
+                            <th>Username</th>
+                            <th>Mobile</th>
+                            <th>DOB</th>
+                            <th>User Type</th>
+                            <th>Grade</th>
+                            <th>City</th>
+                            <th>State</th>
+                            <th>Address</th>
+                            <th>Earn Coins</th>
+                            <th>Heart Coins</th>
+                            <th>Brain Coins</th>
+                            <th>School ID</th>
+                            <th>School Code</th>
+                            <th>Registered At</th>
+                            <th>Mission Requested</th>
+                            <th>Mission Approved</th>
+                            <th>Vision Requested</th>
+                            <th>Vision Approved</th>
+                            <th>Actions</th>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                        </thead>
+                        <tbody>
+                          {paginatedData.map((row, index) => (
+                            <tr key={index}>
+                              <td>{row.id}</td>
+                              <td>{row.name}</td>
+                              <td>{row.school_name}</td>
+                              <td>{row.guardian_name}</td>
+                              <td>{row.email}</td>
+                              <td>{row.username}</td>
+                              <td>{row.mobile_no}</td>
+                              <td>{row.dob}</td>
+                              <td>{row.user_type}</td>
+                              <td>{row.grade}</td>
+                              <td>{row.city}</td>
+                              <td>{row.state}</td>
+                              <td>{row.address}</td>
+                              <td>{row.earn_coins}</td>
+                              <td>{row.heart_coins}</td>
+                              <td>{row.brain_coins}</td>
+                              <td>{row.school_id}</td>
+                              <td>{row.school_code}</td>
+                              <td>{row.registered_at}</td>
+                              <td>{row.total_missions_requested || 0}</td>
+                              <td>{row.total_missions_accepted || 0}</td>
+                              <td>{row.total_visions_requested || 0}</td>
+                              <td>{row.total_visions_accepted || 0}</td>
+                              <td>
+                                <button
+                                  className="btn btn-sm btn-primary me-2 "
+                                  onClick={() => openEdit(row)}
+                                >
+                                  <IconEdit size={16} />
+                                </button>
+                                <button
+                                  className="btn btn-sm btn-danger "
+                                  onClick={() => openDelete(row)}
+                                >
+                                  <IconTrash size={16} />
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
 
                     {/* Pagination Controls */}
                     <div className="d-flex justify-content-between mt-3">
@@ -5673,7 +5811,7 @@ export default function StudentDashboard() {
                         Next
                       </button>
                     </div>
-                  </>
+                  </div>
                 )}
               </div>
             </div>
@@ -6086,3 +6224,4 @@ export default function StudentDashboard() {
 function useDebounce(arg0: () => void, arg1: number, arg2: string[]) {
   throw new Error("Function not implemented.");
 }
+

@@ -3,13 +3,16 @@ import React, { useState, useEffect } from "react";
 import { Inter } from "next/font/google";
 import { Sidebar } from "@/components/ui/sidebar";
 import "@tabler/core/dist/css/tabler.min.css";
-import { IconEdit, IconPlus, IconTrash } from "@tabler/icons-react";
+import { IconEdit, IconPlus, IconTrash, IconX } from "@tabler/icons-react";
 import AddCampaignModal from "./AddCampaignModal";
 const inter = Inter({ subsets: ["latin"] });
 
-// const api_startpoint = "http://152.42.239.141:5000";
+
+
 // const api_startpoint = "http://localhost:5000";
-const api_startpoint = "http://152.42.239.141:5000";
+// const api_startpoint = "http://152.42.239.141:5000";
+const api_startpoint = "https://admin-api.life-lab.org";
+// new api startpoint added
 
 interface Campaign {
   id: number;
@@ -34,12 +37,33 @@ interface CampaignStats {
   total_requested?: number;
   total_coins_earned: number;
 }
+
+// --- New Interface for Mentor Session Edit ---
+interface MentorSessionData {
+  title: string;
+  description: string;
+  status: number;
+  scheduled_for: string; // Keep as string for date input
+}
+
 export default function Campaigns() {
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [loading, setLoading] = useState(false);
   const [modal, setModal] = useState<
     false | { mode: "add" | "edit"; campaign?: Campaign }
   >(false);
+  // --- New state for Mentor Session Modal ---
+  const [mentorSessionModal, setMentorSessionModal] = useState<{
+    isOpen: boolean;
+    campaignId: number | null;
+    initialData: MentorSessionData | null;
+    loading: boolean;
+  }>({
+    isOpen: false,
+    campaignId: null,
+    initialData: null,
+    loading: false,
+  });
   const [detailsModal, setDetailsModal] = useState<{
     open: boolean;
     campaign: Campaign | null;
@@ -58,6 +82,7 @@ export default function Campaigns() {
     null
   );
   const [schoolCode, setSchoolCode] = useState("");
+
   const fetchCampaigns = async (page = 1) => {
     setLoading(true);
     try {
@@ -73,6 +98,7 @@ export default function Campaigns() {
       setLoading(false);
     }
   };
+
   const fetchCampaignStats = async (campaignId: number, code: string) => {
     setDetailsModal((prev) => ({ ...prev, loading: true }));
     try {
@@ -89,13 +115,44 @@ export default function Campaigns() {
       setDetailsModal((prev) => ({ ...prev, loading: false }));
     }
   };
+
   useEffect(() => {
     fetchCampaigns();
   }, []);
+
   const openAdd = () => setModal({ mode: "add" });
   const openEdit = (camp: Campaign) =>
     setModal({ mode: "edit", campaign: camp });
   const closeModal = () => setModal(false);
+
+  // --- New function to open Mentor Session Edit Modal ---
+  const openMentorSessionEdit = (camp: Campaign) => {
+    // Normalize date for input
+    const normalizedDate = camp.scheduled_for
+      ? new Date(camp.scheduled_for).toISOString().split("T")[0]
+      : "";
+    setMentorSessionModal({
+      isOpen: true,
+      campaignId: camp.id,
+      initialData: {
+        title: camp.campaign_title || "",
+        description: camp.description || "",
+        status: camp.status ?? 1,
+        scheduled_for: normalizedDate,
+      },
+      loading: false,
+    });
+  };
+
+  const closeMentorSessionModal = () => {
+    setMentorSessionModal({
+      isOpen: false,
+      campaignId: null,
+      initialData: null,
+      loading: false,
+    });
+  };
+
   const openDetails = (campaign: Campaign) => {
     setSchoolCode("");
     setDetailsModal({
@@ -113,6 +170,7 @@ export default function Campaigns() {
       stats: null,
       loading: false,
     });
+
   const handleDelete = async (id: number) => {
     if (!campaignToDelete) return;
     await fetch(`${api_startpoint}/api/campaigns/${id}`, { method: "DELETE" });
@@ -120,10 +178,46 @@ export default function Campaigns() {
     setShowDeleteModal(false);
     setCampaignToDelete(null);
   };
+
   const confirmDelete = (campaign: Campaign) => {
     setCampaignToDelete(campaign);
     setShowDeleteModal(true);
   };
+
+  // --- Function to handle saving Mentor Session changes ---
+  const handleSaveMentorSession = async (data: MentorSessionData) => {
+    if (!mentorSessionModal.campaignId) return;
+
+    setMentorSessionModal((prev) => ({ ...prev, loading: true }));
+    try {
+      const res = await fetch(
+        `${api_startpoint}/api/campaigns/${mentorSessionModal.campaignId}/mentor-session`,
+        {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(data),
+        }
+      );
+
+      if (res.ok) {
+        console.log("✅ Mentor Session updated successfully");
+        fetchCampaigns(); // Refresh the list
+        closeMentorSessionModal();
+      } else {
+        const errorData = await res.json().catch(() => ({}));
+        console.error("❌ Error updating Mentor Session:", errorData);
+        alert(errorData.message || "Failed to update Mentor Session");
+      }
+    } catch (err) {
+      console.error("🔥 Network error updating Mentor Session:", err);
+      alert("Network error occurred while updating.");
+    } finally {
+      setMentorSessionModal((prev) => ({ ...prev, loading: false }));
+    }
+  };
+
   return (
     <div className={`page bg-body ${inter.className} font-sans`}>
       <Sidebar />
@@ -210,14 +304,12 @@ export default function Campaigns() {
                           </button>
                         </td>
                         <td className="flex gap-2">
-                          {/* Disable Edit for Mentor Session (Type 8) */}
+                          {/* Enable Edit for Mentor Session (Type 8) */}
                           {c.game_type === 8 ? (
-                            <span
-                              className="text-muted"
-                              title="Editing not supported for Mentor Sessions"
-                            >
-                              <IconEdit className="opacity-50" />
-                            </span>
+                            <IconEdit
+                              className="cursor-pointer"
+                              onClick={() => openMentorSessionEdit(c)}
+                            />
                           ) : (
                             <IconEdit
                               className="cursor-pointer"
@@ -263,6 +355,15 @@ export default function Campaigns() {
                 closeModal();
                 fetchCampaigns();
               }}
+            />
+          )}
+          {/* --- Render Mentor Session Edit Modal --- */}
+          {mentorSessionModal.isOpen && mentorSessionModal.initialData && (
+            <MentorSessionEditModal
+              initialData={mentorSessionModal.initialData}
+              onSave={handleSaveMentorSession}
+              onClose={closeMentorSessionModal}
+              loading={mentorSessionModal.loading}
             />
           )}
           {detailsModal.open && (
@@ -325,7 +426,9 @@ export default function Campaigns() {
                         {/* Simplified stats for Mentor Session (Type 8) */}
                         {detailsModal.campaign?.game_type === 8 ? (
                           <div className="d-flex justify-content-between">
-                            <span className="fw-bold">Total Participants:</span>
+                            <span className="fw-bold">
+                              Total Participants Booked:
+                            </span>
                             <span>{detailsModal.stats.total_submission}</span>
                           </div>
                         ) : (
@@ -333,7 +436,7 @@ export default function Campaigns() {
                           <>
                             <div className="d-flex justify-content-between">
                               <span className="fw-bold">
-                                Total Participants Booked:
+                                Total Participants:
                               </span>
                               <span>{detailsModal.stats.total_submission}</span>
                             </div>
@@ -427,3 +530,133 @@ export default function Campaigns() {
     </div>
   );
 }
+
+// --- New Component for Mentor Session Edit Modal ---
+interface MentorSessionEditModalProps {
+  initialData: MentorSessionData;
+  onSave: (data: MentorSessionData) => void;
+  onClose: () => void;
+  loading: boolean;
+}
+
+const MentorSessionEditModal: React.FC<MentorSessionEditModalProps> = ({
+  initialData,
+  onSave,
+  onClose,
+  loading,
+}) => {
+  const [formData, setFormData] = useState<MentorSessionData>(initialData);
+
+  const handleChange = (
+    e: React.ChangeEvent<
+      HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
+    >
+  ) => {
+    const { name, value } = e.target;
+    setFormData((prev) => ({
+      ...prev,
+      [name]: name === "status" ? parseInt(value, 10) : value,
+    }));
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    onSave(formData);
+  };
+
+  return (
+    <div className="modal-backdrop fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div
+        style={{
+          background: "white",
+          padding: 24,
+          borderRadius: 8,
+          maxWidth: 400,
+          width: "100%",
+          maxHeight: "90vh",
+          overflowY: "auto",
+        }}
+      >
+        <div className="modal-dialog modal-sm">
+          <div className="modal-content">
+            <div className="d-flex justify-content-between align-items-center mb-4">
+              <h2 className="text-xl mb-0">Edit Mentor Session</h2>
+              <button
+                className="btn btn-icon"
+                onClick={onClose}
+                aria-label="Close"
+              >
+                <IconX size={20} />
+              </button>
+            </div>
+            <form onSubmit={handleSubmit}>
+              <div className="mb-3">
+                <label className="form-label">Title</label>
+                <input
+                  type="text"
+                  className="form-control"
+                  name="title"
+                  value={formData.title}
+                  onChange={handleChange}
+                  required
+                />
+              </div>
+              <div className="mb-3">
+                <label className="form-label">Description</label>
+                <textarea
+                  className="form-control"
+                  name="description"
+                  value={formData.description}
+                  onChange={handleChange}
+                  rows={3}
+                />
+              </div>
+              <div className="mb-3">
+                <label className="form-label">Status</label>
+                <select
+                  className="form-select"
+                  name="status"
+                  value={formData.status}
+                  onChange={handleChange}
+                >
+                  <option value={1}>Active</option>
+                  <option value={0}>Inactive</option>
+                </select>
+              </div>
+              <div className="mb-4">
+                <label className="form-label">Scheduled Date</label>
+                <input
+                  type="date"
+                  className="form-control"
+                  name="scheduled_for"
+                  value={formData.scheduled_for}
+                  onChange={handleChange}
+                  required
+                />
+              </div>
+              <div className="d-flex justify-content-end gap-2">
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={onClose}
+                  disabled={loading}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  disabled={
+                    loading || !formData.title || !formData.scheduled_for
+                  }
+                >
+                  {loading ? "Saving..." : "Save"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};

@@ -6,7 +6,7 @@ export default function LogoutButton() {
 
   const handleLogout = async () => {
     try {
-      await fetch('http://152.42.239.141:5000/api/logout', {
+      await fetch('http://admin-api.life-lab.org/api/logout', {
         method: 'POST',
       })
       sessionStorage.removeItem('isLoggedIn')

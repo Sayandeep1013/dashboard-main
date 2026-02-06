@@ -1,20 +1,67 @@
 "use client";
-import '@tabler/core/dist/css/tabler.min.css';
+import "@tabler/core/dist/css/tabler.min.css";
 // import 'bootstrap/dist/css/bootstrap.min.css';
-import { useState, useEffect, useRef, useMemo } from 'react';
-import React from 'react';
-import { Inter } from 'next/font/google';
-const inter = Inter({ subsets: ['latin'] });
-import { Sidebar } from '@/components/ui/sidebar';
-import { IconSearch, IconBell, IconSettings, IconEdit, IconTrash } from '@tabler/icons-react';
+import { useState, useEffect, useRef, useMemo } from "react";
+import React from "react";
+import { Inter } from "next/font/google";
+const inter = Inter({ subsets: ["latin"] });
+import { Sidebar } from "@/components/ui/sidebar";
+import {
+  IconSearch,
+  IconBell,
+  IconSettings,
+  IconEdit,
+  IconTrash,
+  IconChevronLeft,
+  IconChevronRight, // Added scroll icons
+} from "@tabler/icons-react";
 import { ChevronDown, Download, Plus, Search, XCircle } from "lucide-react";
-import cluster from 'cluster';
+import cluster from "cluster";
 
-// const poppins = Poppins({
-//   subsets: ['latin'],
-//   weight: ['400', '600', '700'],
-//   variable: '--font-poppins',
-// });
+// --- Inject CSS styles for the new features ---
+const tableStyles = `
+  <style>
+    .table-container {
+      position: relative;
+    }
+    .scroll-hint-left, .scroll-hint-right {
+      position: absolute;
+      top: 50%;
+      transform: translateY(-50%);
+      background: rgba(111, 66, 193, 0.9); /* Purple color, adjust as needed */
+      color: white;
+      padding: 12px 16px;
+      border-radius: 10%; /* Changed from 50% to 10% as requested */
+      cursor: pointer;
+      z-index: 5;
+      transition: opacity 0.3s;
+      border: none;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+    }
+    .scroll-hint-left {
+      left: 15px;
+    }
+    .scroll-hint-right {
+      right: 15px;
+    }
+    .scroll-hint-hidden {
+      opacity: 0;
+      pointer-events: none;
+    }
+    /* Sticky table header */
+    .table-sticky-header thead th {
+      position: sticky;
+      top: 0;
+      background: #f8f9fa; /* Or match your table header background */
+      z-index: 1;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    /* Smooth scrolling */
+    .smooth-scroll {
+      scroll-behavior: smooth;
+    }
+  </style>
+`;
 
 // ------------------- SEARCHABLE DROPDOWN COMPONENT -------------------
 interface SearchableDropdownProps {
@@ -40,7 +87,6 @@ function SearchableDropdown({
   const dropdownRef = useRef<HTMLDivElement>(null);
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-
   useEffect(() => {
     if (searchTimeoutRef.current) {
       clearTimeout(searchTimeoutRef.current);
@@ -53,41 +99,48 @@ function SearchableDropdown({
       if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
     };
   }, [searchTerm, maxDisplayItems]);
-
   const filteredOptions = useMemo(() => {
     if (!debouncedSearchTerm.trim()) return options;
     const searchLower = debouncedSearchTerm.toLowerCase();
-    return options.filter(option => option.toLowerCase().includes(searchLower));
+    return options.filter((option) =>
+      option.toLowerCase().includes(searchLower)
+    );
   }, [options, debouncedSearchTerm]);
-
   const handleScroll = () => {
     if (!scrollContainerRef.current) return;
-    const { scrollTop, scrollHeight, clientHeight } = scrollContainerRef.current;
-    if (scrollTop + clientHeight >= scrollHeight - 50 && displayedItems < filteredOptions.length) {
-      setDisplayedItems(prev => Math.min(prev + maxDisplayItems, filteredOptions.length));
+    const { scrollTop, scrollHeight, clientHeight } =
+      scrollContainerRef.current;
+    if (
+      scrollTop + clientHeight >= scrollHeight - 50 &&
+      displayedItems < filteredOptions.length
+    ) {
+      setDisplayedItems((prev) =>
+        Math.min(prev + maxDisplayItems, filteredOptions.length)
+      );
     }
   };
-
   useEffect(() => {
     const scrollContainer = scrollContainerRef.current;
     if (scrollContainer) {
-      scrollContainer.addEventListener('scroll', handleScroll);
+      scrollContainer.addEventListener("scroll", handleScroll);
     }
     return () => {
-      if (scrollContainer) scrollContainer.removeEventListener('scroll', handleScroll);
+      if (scrollContainer)
+        scrollContainer.removeEventListener("scroll", handleScroll);
     };
   }, [displayedItems, filteredOptions.length, maxDisplayItems]);
-
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+      if (
+        dropdownRef.current &&
+        !dropdownRef.current.contains(event.target as Node)
+      ) {
         setIsOpen(false);
       }
     };
     if (isOpen) document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [isOpen]);
-
   const handleSelect = (option: string) => {
     onChange(option);
     setIsOpen(false);
@@ -95,10 +148,11 @@ function SearchableDropdown({
     setDebouncedSearchTerm("");
     setDisplayedItems(maxDisplayItems);
   };
-
-  const visibleOptions = useMemo(() => filteredOptions.slice(0, displayedItems), [filteredOptions, displayedItems]);
+  const visibleOptions = useMemo(
+    () => filteredOptions.slice(0, displayedItems),
+    [filteredOptions, displayedItems]
+  );
   const hasMoreItems = filteredOptions.length > displayedItems;
-
   return (
     <div className="relative" ref={dropdownRef}>
       <div
@@ -109,7 +163,7 @@ function SearchableDropdown({
         aria-haspopup="listbox"
       >
         <span className={value ? "text-gray-900" : "text-gray-500"}>
-          {isLoading ? "Loading..." : (value || placeholder)}
+          {isLoading ? "Loading..." : value || placeholder}
         </span>
         <ChevronDown className="h-4 w-4 text-gray-500" />
       </div>
@@ -142,12 +196,17 @@ function SearchableDropdown({
                     </div>
                   ))
                 ) : (
-                  <div className="px-3 py-2 text-gray-500">No results found</div>
+                  <div className="px-3 py-2 text-gray-500">
+                    No results found
+                  </div>
                 )}
                 {hasMoreItems && (
                   <div className="flex items-center justify-center px-3 py-2 text-gray-500 border-t bg-gray-50">
                     <div className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-gray-300 border-t-gray-600"></div>
-                    <span>Loading more... ({visibleOptions.length} of {filteredOptions.length})</span>
+                    <span>
+                      Loading more... ({visibleOptions.length} of{" "}
+                      {filteredOptions.length})
+                    </span>
                   </div>
                 )}
               </>
@@ -158,10 +217,13 @@ function SearchableDropdown({
     </div>
   );
 }
-
 //const api_startpoint = 'https://lifeapp-api-vv1.vercel.app'
-const api_startpoint = 'http://152.42.239.141:5000'
-// const api_startpoint = 'http://152.42.239.141:5000'
+// const api_startpoint = "http://localhost:5000";
+// const api_startpoint = "http://152.42.239.141:5000";
+const api_startpoint = "https://admin-api.life-lab.org";
+// whatever
+
+
 // ------------------- MAIN COMPONENT -------------------
 export default function SchoolData() {
   // ---------- State Variables ----------
@@ -179,7 +241,6 @@ export default function SchoolData() {
   const [filterCluster, setFilterCluster] = useState("");
   const [filterBlock, setFilterBlock] = useState("");
   const [filterStatus, setFilterStatus] = useState("");
-
   // Modal states
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -198,16 +259,19 @@ export default function SchoolData() {
     app_visible: "No",
     is_life_lab: "No",
     status: "Inactive",
-    donor_name: "",   // ← new field
+    donor_name: "", // ← new field
   });
-
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
-  const [perPage, setPerPage]       = useState(50);
+  const [perPage, setPerPage] = useState(15);
   const [totalPages, setTotalPages] = useState(1);
-  const [totalRows, setTotalRows]   = useState(0);
-  const rowsPerPage = 50;
-  // const paginatedData = tableData.slice(currentPage * rowsPerPage, (currentPage + 1) * rowsPerPage);
+  const [totalRows, setTotalRows] = useState(0);
+  const rowsPerPage = 15;
+
+  // --- Refs for table scrolling functionality ---
+  const tableContainerRef = useRef<HTMLDivElement>(null);
+  const [showLeftHint, setShowLeftHint] = useState(false);
+  const [showRightHint, setShowRightHint] = useState(true);
 
   // ---------- Fetching Functions ----------
   const fetchSchools = async () => {
@@ -222,15 +286,15 @@ export default function SchoolData() {
       status: filterStatus,
       page: currentPage,
       per_page: rowsPerPage,
-    }
+    };
     setLoading(true);
     try {
-      // For this example, we simply fetch all schools. 
+      // For this example, we simply fetch all schools.
       // You can extend your API to accept query parameters for filtering.
-      const res = await fetch(`${api_startpoint}/api/get_schools_data`,{
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(filters)
+      const res = await fetch(`${api_startpoint}/api/get_schools_data`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(filters),
       });
       if (!res.ok) {
         throw new Error(`API responded with status: ${res.status}`);
@@ -239,13 +303,17 @@ export default function SchoolData() {
       setTableData(data);
       setTotalRows(total);
       setTotalPages(total_pages);
+
+       // --- Reset scroll hints when new data loads ---
+       setTimeout(() => {
+        updateScrollHints();
+      }, 100);
     } catch (error) {
       console.error("Error fetching schools:", error);
     } finally {
       setLoading(false);
     }
   };
-
   const fetchStates = async () => {
     try {
       const res = await fetch(`${api_startpoint}/api/state_list`);
@@ -257,19 +325,50 @@ export default function SchoolData() {
       console.error("Error fetching states:", error);
     }
   };
-  
-
   const fetchCitiesForState = async (st: string) => {
     if (!st) {
       setCities([]);
       return;
     }
     try {
-      const res = await fetch(`${api_startpoint}/api/cities_for_state?state=${encodeURIComponent(st)}`);
+      const res = await fetch(
+        `${api_startpoint}/api/cities_for_state?state=${encodeURIComponent(st)}`
+      );
       const data = await res.json();
       setCities(data);
     } catch (error) {
       console.error("Error fetching cities:", error);
+    }
+  };
+
+  // --- Update scroll hints based on current scroll position ---
+  const updateScrollHints = () => {
+    const container = tableContainerRef.current;
+    if (container) {
+      const { scrollLeft, scrollWidth, clientWidth } = container;
+      setShowLeftHint(scrollLeft > 10);
+      setShowRightHint(scrollLeft < scrollWidth - clientWidth - 10);
+    }
+  };
+
+  // --- Handle scroll events to show/hide scroll hints ---
+  const handleTableScroll = () => {
+    updateScrollHints();
+  };
+
+  // --- Scroll table horizontally with larger increments and smooth behavior ---
+  const scrollTableHorizontally = (direction: 'left' | 'right') => {
+    if (tableContainerRef.current) {
+      const container = tableContainerRef.current;
+      const scrollAmount = container.clientWidth * 0.8; // Scroll 80% of viewport width
+      container.scrollTo({
+        left: direction === 'left'
+          ? container.scrollLeft - scrollAmount
+          : container.scrollLeft + scrollAmount,
+        behavior: 'smooth'
+      });
+      // Update hints after scroll
+      setTimeout(updateScrollHints, 300);
     }
   };
 
@@ -287,20 +386,21 @@ export default function SchoolData() {
       setSelectedCity("");
     }
   }, [selectedState]);
-
   // ---------- Handlers ----------
   const handleEditClick = (school: any) => {
-    setEditSchoolData({ ...school, donor_name: school.donor_name || ""  });
+    setEditSchoolData({ ...school, donor_name: school.donor_name || "" });
     setShowEditModal(true);
   };
-
   const handleEditModalSave = async () => {
     try {
-      const res = await fetch(`${api_startpoint}/api/schools_data/${editSchoolData.id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(editSchoolData),
-      });
+      const res = await fetch(
+        `${api_startpoint}/api/schools_data/${editSchoolData.id}`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(editSchoolData),
+        }
+      );
       if (!res.ok) {
         console.error("Failed to update school");
         return;
@@ -311,18 +411,19 @@ export default function SchoolData() {
       console.error("Error updating school:", error);
     }
   };
-
   const handleDeleteClick = (schoolId: number) => {
     setDeleteSchoolId(schoolId);
     setShowDeleteModal(true);
   };
-
   const handleDeleteConfirm = async () => {
     if (!deleteSchoolId) return;
     try {
-      const res = await fetch(`${api_startpoint}/api/schools_data/${deleteSchoolId}`, {
-        method: "DELETE",
-      });
+      const res = await fetch(
+        `${api_startpoint}/api/schools_data/${deleteSchoolId}`,
+        {
+          method: "DELETE",
+        }
+      );
       if (!res.ok) {
         console.error("Failed to delete school");
         return;
@@ -333,7 +434,6 @@ export default function SchoolData() {
       console.error("Error deleting school:", error);
     }
   };
-
   const handleAddSchool = async () => {
     try {
       const res = await fetch(`${api_startpoint}/api/schools_data`, {
@@ -355,14 +455,13 @@ export default function SchoolData() {
         app_visible: "No",
         is_life_lab: "No",
         status: "Inactive",
-        donor_name: "",   // ← reset it
+        donor_name: "", // ← reset it
       });
       fetchSchools();
     } catch (error) {
       console.error("Error adding school:", error);
     }
   };
-
   const handleClear = () => {
     setFilterName("");
     setSelectedSchoolCode([]);
@@ -375,65 +474,55 @@ export default function SchoolData() {
     setCurrentPage(0);
     fetchSchools();
   };
-
   // const handlePrevPage = () => {
   //   setCurrentPage(prev => Math.max(prev - 1, 0));
   // };
-
   // const handleNextPage = () => {
   //   setCurrentPage(prev => (prev + 1) * rowsPerPage < tableData.length ? prev + 1 : prev);
   // };
   // 3) Prev/Next handlers
-  const goPrev = () => setCurrentPage(p => Math.max(1, p - 1));
-  const goNext = () => setCurrentPage(p => Math.min(totalPages, p + 1));
-
+  const goPrev = () => setCurrentPage((p) => Math.max(1, p - 1));
+  const goNext = () => setCurrentPage((p) => Math.min(totalPages, p + 1));
   // 4) Rows-per-page change
   const onPerPageChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     setPerPage(Number(e.target.value));
     setCurrentPage(1);
   };
-
   // Add this state near other modal states
   const [showCsvModal, setShowCsvModal] = useState(false);
   const [csvFile, setCsvFile] = useState<File | null>(null);
   const [uploadStatus, setUploadStatus] = useState<string | null>(null);
-
   // Add this handler
   const handleCsvUpload = async () => {
     if (!csvFile) return;
-
     const formData = new FormData();
-    formData.append('csv', csvFile);
-
+    formData.append("csv", csvFile);
     try {
-      setUploadStatus('Uploading...');
+      setUploadStatus("Uploading...");
       const res = await fetch(`${api_startpoint}/api/upload_schools_csv`, {
-        method: 'POST',
+        method: "POST",
         body: formData,
       });
-
       if (!res.ok) throw new Error(await res.text());
-      
-      setUploadStatus('Upload successful!');
+      setUploadStatus("Upload successful!");
       setTimeout(() => {
         setShowCsvModal(false);
         fetchSchools();
       }, 1500);
     } catch (error) {
-      console.error('Upload failed:', error);
-      setUploadStatus('Upload failed. Please check the file format.');
+      console.error("Upload failed:", error);
+      setUploadStatus("Upload failed. Please check the file format.");
     }
   };
-
   // -------- CSV Template Download Setup --------
   const csvTemplate =
-  "school_name,state_name,city_name,district_name,block_name,cluster_name,pin_code,school_code,donor_name,app_visible,is_life_lab,status\n";
+    "school_name,state_name,city_name,district_name,block_name,cluster_name,pin_code,school_code,donor_name,app_visible,is_life_lab,status";
   const downloadCsvTemplate = () => {
-    const blob = new Blob([csvTemplate], { type: 'text/csv' });
+    const blob = new Blob([csvTemplate], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
+    const link = document.createElement("a");
     link.href = url;
-    link.setAttribute('download', 'school_template.csv');
+    link.setAttribute("download", "school_template.csv");
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -442,6 +531,8 @@ export default function SchoolData() {
   // ------------------- Render -------------------
   return (
     <div className={`page bg-light ${inter.className} font-sans`}>
+      {/* Inject CSS styles */}
+      <div dangerouslySetInnerHTML={{ __html: tableStyles }} />
       <Sidebar />
       <div className="page-wrapper" style={{ marginLeft: "250px" }}>
         {/* Top Navigation */}
@@ -465,7 +556,7 @@ export default function SchoolData() {
             </div>
           </div>
         </header> */}
-        <div className='page-body'>
+        <div className="page-body">
           <div className="container-xl pt-0 pb-4">
             {/* Search & Filter Section */}
             <div className="card shadow-sm border-0 mb-4">
@@ -483,37 +574,43 @@ export default function SchoolData() {
                   </div>
                   <div className="col-12 col-md-6 col-lg-4">
                     <div className="border rounded p-2 bg-white">
-                        
-                        <input
+                      <input
                         type="text"
                         placeholder="Search With School code (comma separated)"
                         className="form-control border-0 p-0"
                         value={inputCode}
                         onChange={(e) => setInputCode(e.target.value)}
                         onKeyDown={(e) => {
-                            if (['Enter', ',', ' '].includes(e.key)) {
+                          if (["Enter", ",", " "].includes(e.key)) {
                             e.preventDefault();
                             const code = inputCode.trim();
                             if (code && !selectedSchoolCode.includes(code)) {
-                                setSelectedSchoolCode(prev => [...prev, code]);
+                              setSelectedSchoolCode((prev) => [...prev, code]);
                             }
-                            setInputCode('');
-                            }
+                            setInputCode("");
+                          }
                         }}
-                        />
-                        <div className="d-flex flex-wrap gap-2 mt-2">
-                        {selectedSchoolCode.map(code => (
-                            <span key={code} className="badge bg-purple text-white d-flex align-items-center">
+                      />
+                      <div className="d-flex flex-wrap gap-2 mt-2">
+                        {selectedSchoolCode.map((code) => (
+                          <span
+                            key={code}
+                            className="badge bg-purple text-white d-flex align-items-center"
+                          >
                             {code}
-                            <button 
-                                type="button" 
-                                className="btn-close btn-close-white ms-2" 
-                                onClick={() => setSelectedSchoolCode(prev => prev.filter(c => c !== code))}
-                                aria-label="Remove"
+                            <button
+                              type="button"
+                              className="btn-close btn-close-white ms-2"
+                              onClick={() =>
+                                setSelectedSchoolCode((prev) =>
+                                  prev.filter((c) => c !== code)
+                                )
+                              }
+                              aria-label="Remove"
                             ></button>
-                            </span>
+                          </span>
                         ))}
-                        </div>
+                      </div>
                     </div>
                   </div>
                   <div className="col-12 col-md-6 col-lg-3">
@@ -573,46 +670,91 @@ export default function SchoolData() {
                     />
                   </div>
                 </div>
-                <div className="row g-3 mt-2">
-                  
-                </div>
+                <div className="row g-3 mt-2"></div>
                 <div className="row g-3 mt-2">
                   <div className="col-12 d-flex gap-2">
-                    <button className="btn btn-success d-inline-flex align-items-center" onClick={fetchSchools}>
+                    <button
+                      className="btn btn-success d-inline-flex align-items-center"
+                      onClick={fetchSchools}
+                    >
                       <Search className="me-2" size={16} /> Search
                     </button>
-                    <button className="btn btn-warning d-inline-flex align-items-center text-dark" onClick={handleClear}>
+                    <button
+                      className="btn btn-warning d-inline-flex align-items-center text-dark"
+                      onClick={handleClear}
+                    >
                       <XCircle className="me-2" size={16} /> Clear
                     </button>
-                    <button className="btn btn-success d-inline-flex align-items-center" onClick={() => setShowAddModal(true)}>
+                    <button
+                      className="btn btn-success d-inline-flex align-items-center"
+                      onClick={() => setShowAddModal(true)}
+                    >
                       <Plus className="me-2" size={16} /> Add School
                     </button>
-                    <button className="btn btn-info d-inline-flex align-items-center text-white" onClick={() => setShowCsvModal(true)}>
+                    <button
+                      className="btn btn-info d-inline-flex align-items-center text-white"
+                      onClick={() => setShowCsvModal(true)}
+                    >
                       <Plus className="me-2" size={16} /> Upload CSV
                     </button>
                     {/* Download Template Button */}
-                    <button className="btn btn-secondary d-inline-flex align-items-center ms-2" onClick={downloadCsvTemplate}>
-                      <Download className="me-2" size={16} /> Download CSV Template
+                    <button
+                      className="btn btn-secondary d-inline-flex align-items-center ms-2"
+                      onClick={downloadCsvTemplate}
+                    >
+                      <Download className="me-2" size={16} /> Download CSV
+                      Template
                     </button>
                   </div>
                 </div>
               </div>
-            
-
-            {/* TABLE OF SCHOOLS WITH PAGINATION */}
+              {/* TABLE OF SCHOOLS WITH PAGINATION */}
               <div className="card shadow-sm border-0 mt-2 mb-4">
-                <div className="card-body overflow-x-scroll">
-                  <h5 className="card-title">All Schools- {totalRows} Schools found</h5>
+                <div className="card-body">
+                {/* --- Table container with scroll hints --- */}
+                <div className="table-container">
+                  {/* Scroll hints for visual indication - larger buttons with significant scroll */}
+                  <button
+                    className={`scroll-hint-left ${!showLeftHint ? 'scroll-hint-hidden' : ''}`}
+                    onClick={() => scrollTableHorizontally('left')}
+                    aria-label="Scroll left"
+                  >
+                    <IconChevronLeft size={24} />
+                  </button>
+                  <button
+                    className={`scroll-hint-right ${!showRightHint ? 'scroll-hint-hidden' : ''}`}
+                    onClick={() => scrollTableHorizontally('right')}
+                    aria-label="Scroll right"
+                  >
+                    <IconChevronRight size={24} />
+                  </button>
+                  {/* --- Table with sticky headers, smooth scrolling, and boxed view (shadow, rounded) --- */}
+                  <div
+                    ref={tableContainerRef}
+                    className="overflow-x-scroll smooth-scroll rounded-lg shadow bg-white" // Added bg-white for boxed view consistency
+                    onScroll={handleTableScroll}
+                    style={{ maxHeight: '70vh', overflowY: 'auto' }} // Optional: vertical scrolling with max height
+                  >
+                  <h5 className="card-title">
+                    All Schools- {totalRows} Schools found
+                  </h5>
                   {loading ? (
                     <div className="text-center p-5">
-                        <div className="spinner-border text-purple" role="status" style={{ width: "3rem", height: "3rem" }}>
-                            <span className="visually-hidden">Loading...</span>
-                        </div>
-                        <p className="mt-3 text-muted">Loading data, please wait...</p>
+                      <div
+                        className="spinner-border text-purple"
+                        role="status"
+                        style={{ width: "3rem", height: "3rem" }}
+                      >
+                        <span className="visually-hidden">Loading...</span>
+                      </div>
+                      <p className="mt-3 text-muted">
+                        Loading data, please wait...
+                      </p>
                     </div>
                   ) : (
                     <div className="table-responsive">
-                      <table className="table table-bordered table-hover">
+                      {/* --- Added table-sticky-header class --- */}
+                      <table className="table table-bordered table-hover table-sticky-header">
                         <thead>
                           <tr>
                             <th>ID</th>
@@ -648,10 +790,16 @@ export default function SchoolData() {
                               <td>{school.is_life_lab}</td>
                               <td>{school.status}</td>
                               <td>
-                                <button className="btn btn-sm btn-primary me-2" onClick={() => handleEditClick(school)}>
+                                <button
+                                  className="btn btn-sm btn-primary me-2"
+                                  onClick={() => handleEditClick(school)}
+                                >
                                   <IconEdit size={16} />
                                 </button>
-                                <button className="btn btn-sm btn-danger" onClick={() => handleDeleteClick(school.id)}>
+                                <button
+                                  className="btn btn-sm btn-danger"
+                                  onClick={() => handleDeleteClick(school.id)}
+                                >
                                   <IconTrash size={16} />
                                 </button>
                               </td>
@@ -660,8 +808,12 @@ export default function SchoolData() {
                         </tbody>
                       </table>
                       {/* Pagination Controls */}
-                      <div className="d-flex justify-content-between align-items-center">
-                        <button className="btn btn-outline-secondary" onClick={goPrev} disabled={currentPage === 1}>
+                      <div className="d-flex justify-content-between align-items-center mt-3">
+                        <button
+                          className="btn btn-outline-secondary"
+                          onClick={goPrev}
+                          disabled={currentPage === 1}
+                        >
                           Previous
                         </button>
                         <span>
@@ -669,38 +821,61 @@ export default function SchoolData() {
                         </span>
                         <button
                           className="btn btn-outline-secondary"
-                          onClick={goNext} disabled={currentPage === totalPages}
+                          onClick={goNext}
+                          disabled={currentPage === totalPages}
                         >
                           Next
                         </button>
                       </div>
                     </div>
                   )}
+                   </div>
+                  </div>
                 </div>
               </div>
             </div>
           </div>
         </div>
       </div>
-
       {/* ADD SCHOOL MODAL */}
       {showAddModal && (
-        <div className="modal fade show" style={{ display: "block", backgroundColor: "rgba(0,0,0,0.5)" }}>
+        <div
+          className="modal fade show"
+          style={{ display: "block", backgroundColor: "rgba(0,0,0,0.5)" }}
+        >
           <div className="modal-dialog">
             <div className="modal-content">
               <div className="modal-header">
                 <h5 className="modal-title">Add School</h5>
-                <button type="button" className="btn-close" onClick={() => setShowAddModal(false)}></button>
+                <button
+                  type="button"
+                  className="btn-close"
+                  onClick={() => setShowAddModal(false)}
+                ></button>
               </div>
               <div className="modal-body">
-                {["name", "district", "cluster", "block", "pin_code", "code"].map((field) => (
+                {[
+                  "name",
+                  "district",
+                  "cluster",
+                  "block",
+                  "pin_code",
+                  "code",
+                ].map((field) => (
                   <div className="mb-3" key={field}>
-                    <label className="form-label">{field.charAt(0).toUpperCase() + field.slice(1)}</label>
+                    <label className="form-label">
+                      {field.charAt(0).toUpperCase() + field.slice(1)}
+                    </label>
                     <input
                       type="text"
                       className="form-control"
                       value={addSchoolData[field]}
-                      onChange={(e) => setAddSchoolData({ ...addSchoolData, [field]: e.target.value })}
+                      onChange={(e) =>
+                        setAddSchoolData({
+                          ...addSchoolData,
+                          [field]: e.target.value,
+                        })
+                      }
                     />
                   </div>
                 ))}
@@ -710,15 +885,18 @@ export default function SchoolData() {
                     options={states}
                     placeholder="Select State"
                     value={addSchoolData.state}
-                    onChange={val => {
+                    onChange={(val) => {
                       // when state changes, clear city and fetch its list
-                      setAddSchoolData({ ...addSchoolData, state: val, city: "" });
+                      setAddSchoolData({
+                        ...addSchoolData,
+                        state: val,
+                        city: "",
+                      });
                       fetchCitiesForState(val);
                     }}
                     isLoading={false}
                   />
                 </div>
-
                 {/* City field */}
                 <div className="mb-3">
                   <label className="form-label">City</label>
@@ -726,7 +904,9 @@ export default function SchoolData() {
                     options={cities}
                     placeholder="Select City"
                     value={addSchoolData.city}
-                    onChange={val => setAddSchoolData({ ...addSchoolData, city: val })}
+                    onChange={(val) =>
+                      setAddSchoolData({ ...addSchoolData, city: val })
+                    }
                     isLoading={!cities.length}
                   />
                 </div>
@@ -735,7 +915,12 @@ export default function SchoolData() {
                   <select
                     className="form-select"
                     value={addSchoolData.app_visible}
-                    onChange={(e) => setAddSchoolData({ ...addSchoolData, app_visible: e.target.value })}
+                    onChange={(e) =>
+                      setAddSchoolData({
+                        ...addSchoolData,
+                        app_visible: e.target.value,
+                      })
+                    }
                   >
                     <option value="Yes">Yes</option>
                     <option value="No">No</option>
@@ -746,7 +931,12 @@ export default function SchoolData() {
                   <select
                     className="form-select"
                     value={addSchoolData.is_life_lab}
-                    onChange={(e) => setAddSchoolData({ ...addSchoolData, is_life_lab: e.target.value })}
+                    onChange={(e) =>
+                      setAddSchoolData({
+                        ...addSchoolData,
+                        is_life_lab: e.target.value,
+                      })
+                    }
                   >
                     <option value="Yes">Yes</option>
                     <option value="No">No</option>
@@ -771,7 +961,12 @@ export default function SchoolData() {
                   <select
                     className="form-select"
                     value={addSchoolData.status}
-                    onChange={(e) => setAddSchoolData({ ...addSchoolData, status: e.target.value })}
+                    onChange={(e) =>
+                      setAddSchoolData({
+                        ...addSchoolData,
+                        status: e.target.value,
+                      })
+                    }
                   >
                     <option value="Active">Active</option>
                     <option value="Inactive">Inactive</option>
@@ -779,7 +974,10 @@ export default function SchoolData() {
                 </div>
               </div>
               <div className="modal-footer">
-                <button className="btn btn-secondary" onClick={() => setShowAddModal(false)}>
+                <button
+                  className="btn btn-secondary"
+                  onClick={() => setShowAddModal(false)}
+                >
                   Cancel
                 </button>
                 <button className="btn btn-primary" onClick={handleAddSchool}>
@@ -790,25 +988,45 @@ export default function SchoolData() {
           </div>
         </div>
       )}
-
       {/* EDIT SCHOOL MODAL */}
       {showEditModal && (
-        <div className="modal fade show" style={{ display: "block", backgroundColor: "rgba(0,0,0,0.5)" }}>
+        <div
+          className="modal fade show"
+          style={{ display: "block", backgroundColor: "rgba(0,0,0,0.5)" }}
+        >
           <div className="modal-dialog">
             <div className="modal-content">
               <div className="modal-header">
                 <h5 className="modal-title">Edit School</h5>
-                <button type="button" className="btn-close" onClick={() => setShowEditModal(false)}></button>
+                <button
+                  type="button"
+                  className="btn-close"
+                  onClick={() => setShowEditModal(false)}
+                ></button>
               </div>
               <div className="modal-body">
-                {["name", "district", "cluster", "block", "pin_code", "code"].map((field) => (
+                {[
+                  "name",
+                  "district",
+                  "cluster",
+                  "block",
+                  "pin_code",
+                  "code",
+                ].map((field) => (
                   <div className="mb-3" key={field}>
-                    <label className="form-label">{field.charAt(0).toUpperCase() + field.slice(1)}</label>
+                    <label className="form-label">
+                      {field.charAt(0).toUpperCase() + field.slice(1)}
+                    </label>
                     <input
                       type="text"
                       className="form-control"
                       value={editSchoolData[field] || ""}
-                      onChange={(e) => setEditSchoolData({ ...editSchoolData, [field]: e.target.value })}
+                      onChange={(e) =>
+                        setEditSchoolData({
+                          ...editSchoolData,
+                          [field]: e.target.value,
+                        })
+                      }
                     />
                   </div>
                 ))}
@@ -819,14 +1037,17 @@ export default function SchoolData() {
                     options={states}
                     placeholder="Select State"
                     value={editSchoolData.state || ""}
-                    onChange={val => {
-                      setEditSchoolData({ ...editSchoolData, state: val, city: "" });
+                    onChange={(val) => {
+                      setEditSchoolData({
+                        ...editSchoolData,
+                        state: val,
+                        city: "",
+                      });
                       fetchCitiesForState(val);
                     }}
                     isLoading={false}
                   />
                 </div>
-
                 {/* City field */}
                 <div className="mb-3">
                   <label className="form-label">City</label>
@@ -834,7 +1055,9 @@ export default function SchoolData() {
                     options={cities}
                     placeholder="Select City"
                     value={editSchoolData.city || ""}
-                    onChange={val => setEditSchoolData({ ...editSchoolData, city: val })}
+                    onChange={(val) =>
+                      setEditSchoolData({ ...editSchoolData, city: val })
+                    }
                     isLoading={!cities.length}
                   />
                 </div>
@@ -843,7 +1066,12 @@ export default function SchoolData() {
                   <select
                     className="form-select"
                     value={editSchoolData.app_visible || "No"}
-                    onChange={(e) => setEditSchoolData({ ...editSchoolData, app_visible: e.target.value })}
+                    onChange={(e) =>
+                      setEditSchoolData({
+                        ...editSchoolData,
+                        app_visible: e.target.value,
+                      })
+                    }
                   >
                     <option value="Yes">Yes</option>
                     <option value="No">No</option>
@@ -854,7 +1082,12 @@ export default function SchoolData() {
                   <select
                     className="form-select"
                     value={editSchoolData.is_life_lab || "No"}
-                    onChange={(e) => setEditSchoolData({ ...editSchoolData, is_life_lab: e.target.value })}
+                    onChange={(e) =>
+                      setEditSchoolData({
+                        ...editSchoolData,
+                        is_life_lab: e.target.value,
+                      })
+                    }
                   >
                     <option value="Yes">Yes</option>
                     <option value="No">No</option>
@@ -879,7 +1112,12 @@ export default function SchoolData() {
                   <select
                     className="form-select"
                     value={editSchoolData.status || "Inactive"}
-                    onChange={(e) => setEditSchoolData({ ...editSchoolData, status: e.target.value })}
+                    onChange={(e) =>
+                      setEditSchoolData({
+                        ...editSchoolData,
+                        status: e.target.value,
+                      })
+                    }
                   >
                     <option value="Active">Active</option>
                     <option value="Inactive">Inactive</option>
@@ -887,10 +1125,16 @@ export default function SchoolData() {
                 </div>
               </div>
               <div className="modal-footer">
-                <button className="btn btn-secondary" onClick={() => setShowEditModal(false)}>
+                <button
+                  className="btn btn-secondary"
+                  onClick={() => setShowEditModal(false)}
+                >
                   Cancel
                 </button>
-                <button className="btn btn-primary" onClick={handleEditModalSave}>
+                <button
+                  className="btn btn-primary"
+                  onClick={handleEditModalSave}
+                >
                   Save
                 </button>
               </div>
@@ -898,24 +1142,36 @@ export default function SchoolData() {
           </div>
         </div>
       )}
-
       {/* DELETE SCHOOL MODAL */}
       {showDeleteModal && (
-        <div className="modal fade show" style={{ display: "block", backgroundColor: "rgba(0,0,0,0.5)" }}>
+        <div
+          className="modal fade show"
+          style={{ display: "block", backgroundColor: "rgba(0,0,0,0.5)" }}
+        >
           <div className="modal-dialog">
             <div className="modal-content">
               <div className="modal-header">
                 <h5 className="modal-title">Delete School</h5>
-                <button type="button" className="btn-close" onClick={() => setShowDeleteModal(false)}></button>
+                <button
+                  type="button"
+                  className="btn-close"
+                  onClick={() => setShowDeleteModal(false)}
+                ></button>
               </div>
               <div className="modal-body">
                 Are you sure you want to delete this school?
               </div>
               <div className="modal-footer">
-                <button className="btn btn-secondary" onClick={() => setShowDeleteModal(false)}>
+                <button
+                  className="btn btn-secondary"
+                  onClick={() => setShowDeleteModal(false)}
+                >
                   Cancel
                 </button>
-                <button className="btn btn-danger" onClick={handleDeleteConfirm}>
+                <button
+                  className="btn btn-danger"
+                  onClick={handleDeleteConfirm}
+                >
                   Delete
                 </button>
               </div>
@@ -925,39 +1181,57 @@ export default function SchoolData() {
       )}
       {/* ADD SCHOOL VIA CSV MODAL */}
       {showCsvModal && (
-        <div className="modal fade show" style={{ display: "block", backgroundColor: "rgba(0,0,0,0.5)" }}>
+        <div
+          className="modal fade show"
+          style={{ display: "block", backgroundColor: "rgba(0,0,0,0.5)" }}
+        >
           <div className="modal-dialog">
             <div className="modal-content">
               <div className="modal-header">
                 <h5 className="modal-title">Upload Schools CSV</h5>
-                <button type="button" className="btn-close" onClick={() => setShowCsvModal(false)}></button>
+                <button
+                  type="button"
+                  className="btn-close"
+                  onClick={() => setShowCsvModal(false)}
+                ></button>
               </div>
               <div className="modal-body">
                 <div className="mb-3">
                   <label className="form-label">Select CSV File</label>
-                  <input 
-                    type="file" 
+                  <input
+                    type="file"
                     className="form-control"
                     accept=".csv"
                     onChange={(e) => setCsvFile(e.target.files?.[0] || null)}
                   />
                   <div className="form-text">
-                    CSV format (required columns):<br/>
-                    school_name, state_name, city_name, district_name, block_name,<br/> 
-                    cluster_name, pin_code, school_code, donor_name, app_visible, is_life_lab, status<br/>
+                    CSV format (required columns):
+                    <br />
+                    school_name, state_name, city_name, district_name,
+                    block_name,
+                    <br />
+                    cluster_name, pin_code, school_code, donor_name,
+                    app_visible, is_life_lab, status
+                    <br />
                     <small className="text-muted">
-                      Note: app_visible and is_life_lab values should be - yes or no
+                      Note: app_visible and is_life_lab values should be - yes
+                      or no
                     </small>
                   </div>
                 </div>
-                {uploadStatus && <div className="alert alert-info">{uploadStatus}</div>}
+                {uploadStatus && (
+                  <div className="alert alert-info">{uploadStatus}</div>
+                )}
               </div>
               <div className="modal-footer">
-                <button className="btn btn-secondary" onClick={() => setShowCsvModal(false)}>
+                <button
+                  className="btn btn-secondary"
+                  onClick={() => setShowCsvModal(false)}
+                >
                   Cancel
                 </button>
-                <button 
-                  className="btn btn-primary" 
+                <button
+                  className="btn btn-primary"
                   onClick={handleCsvUpload}
                   disabled={!csvFile || !!uploadStatus}
                 >
@@ -971,3 +1245,4 @@ export default function SchoolData() {
     </div>
   );
 }
+

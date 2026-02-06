@@ -11,8 +11,65 @@ import {
   IconSettings,
   IconDownload,
   IconX,
+  IconChevronLeft,
+  IconChevronRight,
 } from "@tabler/icons-react";
 import { ChevronDown } from "lucide-react";
+
+// Add CSS styles for the new features
+const tableStyles = `
+  <style>
+    .table-container {
+      position: relative;
+    }
+    .scroll-hint-left, .scroll-hint-right {
+      position: absolute;
+      top: 50%;
+      transform: translateY(-50%);
+      background: rgba(111, 66, 193, 0.9);
+      color: white;
+      padding: 12px 16px;
+      border-radius: 10%;
+      cursor: pointer;
+      z-index: 5;
+      transition: opacity 0.3s;
+      border: none;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+    }
+    .scroll-hint-left {
+      left: 15px;
+    }
+    .scroll-hint-right {
+      right: 15px;
+    }
+    .scroll-hint-hidden {
+      opacity: 0;
+      pointer-events: none;
+    }
+    /* Sticky table header */
+    .table-sticky-header thead th {
+      position: sticky;
+      top: 0;
+      background: #f8f9fa;
+      z-index: 1;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    /* Smooth scrolling */
+    .smooth-scroll {
+      scroll-behavior: smooth;
+    }
+    .status-edit-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 220px;
+    }
+    .status-edit-row select {
+      flex: 1;
+      min-width: 140px;
+    }
+  </style>
+`;
 
 interface CouponRedemption {
   "Student Name": string;
@@ -29,10 +86,14 @@ interface CouponRedemption {
   "School Code": string;
   user_id: number;
   "Coupon Redeemed Date": string;
+  status?: string; 
 }
 
-// const api_startpoint = "http://localhost:5000";
-const api_startpoint = "http://152.42.239.141:5000";
+const api_startpoint = "http://localhost:5000";
+// const api_startpoint = 'https://lifeapp-api-vv1.vercel.app'
+// const api_startpoint = "http://152.42.239.141:5000";
+// const api_startpoint = "http://152.42.239.141:5000";
+// const api_startpoint = "https://admin-api.life-lab.org";
 
 function SearchableDropdown({
   options,
@@ -61,12 +122,10 @@ function SearchableDropdown({
     if (searchTimeoutRef.current) {
       clearTimeout(searchTimeoutRef.current);
     }
-
     searchTimeoutRef.current = setTimeout(() => {
       setDebouncedSearchTerm(searchTerm);
       setDisplayedItems(maxDisplayItems);
     }, 300);
-
     return () => {
       if (searchTimeoutRef.current) {
         clearTimeout(searchTimeoutRef.current);
@@ -78,7 +137,6 @@ function SearchableDropdown({
     if (!debouncedSearchTerm.trim()) {
       return options;
     }
-
     const searchLower = debouncedSearchTerm.toLowerCase();
     return options.filter(
       (option) =>
@@ -88,11 +146,8 @@ function SearchableDropdown({
 
   const handleScroll = useCallback(() => {
     if (!scrollContainerRef.current) return;
-
-    const { scrollTop, scrollHeight, clientHeight } =
-      scrollContainerRef.current;
+    const { scrollTop, scrollHeight, clientHeight } = scrollContainerRef.current;
     const scrollPosition = scrollTop + clientHeight;
-
     if (
       scrollHeight - scrollPosition < 50 &&
       displayedItems < filteredOptions.length
@@ -108,7 +163,6 @@ function SearchableDropdown({
     if (scrollContainer) {
       scrollContainer.addEventListener("scroll", handleScroll);
     }
-
     return () => {
       if (scrollContainer) {
         scrollContainer.removeEventListener("scroll", handleScroll);
@@ -125,11 +179,9 @@ function SearchableDropdown({
         setIsOpen(false);
       }
     }
-
     if (isOpen) {
       document.addEventListener("mousedown", handleClickOutside);
     }
-
     return () => {
       document.removeEventListener("mousedown", handleClickOutside);
     };
@@ -148,6 +200,7 @@ function SearchableDropdown({
   }, [filteredOptions, displayedItems]);
 
   const hasMoreItems = filteredOptions.length > displayedItems;
+
   return (
     <div className="relative" ref={dropdownRef}>
       <div
@@ -162,7 +215,6 @@ function SearchableDropdown({
         </span>
         <ChevronDown className="h-4 w-4 text-gray-500" />
       </div>
-
       {isOpen && (
         <div className="absolute z-10 mt-1 w-full rounded-md border border-gray-200 bg-white shadow-lg">
           <div className="p-2">
@@ -196,7 +248,6 @@ function SearchableDropdown({
                     No results found
                   </div>
                 )}
-
                 {hasMoreItems && (
                   <div className="flex items-center justify-center px-3 py-2 text-gray-500 border-t border-gray-100 bg-gray-50">
                     <div className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-gray-300 border-t-purple-500"></div>
@@ -206,7 +257,6 @@ function SearchableDropdown({
                     </span>
                   </div>
                 )}
-
                 {debouncedSearchTerm && filteredOptions.length > 0 && (
                   <div className="px-3 py-2 text-xs text-center text-gray-500 bg-gray-50 border-t border-gray-100">
                     Found {filteredOptions.length} matching results
@@ -259,6 +309,44 @@ export default function CouponsRedeemed() {
   const [itemsPerPage, setItemsPerPage] = useState(10);
   const [schoolCodeInput, setSchoolCodeInput] = useState("");
 
+  // Refs for table scrolling functionality
+  const tableContainerRef = useRef<HTMLDivElement>(null);
+  const [showLeftHint, setShowLeftHint] = useState(false);
+  const [showRightHint, setShowRightHint] = useState(true);
+
+  // Track which row is in edit mode (by user_id)
+  const [editingUserId, setEditingUserId] = useState<number | null>(null);
+  const [editStatusValue, setEditStatusValue] = useState<string>("Processing");
+
+  // Update scroll hints based on current scroll position
+  const updateScrollHints = () => {
+    const container = tableContainerRef.current;
+    if (container) {
+      const { scrollLeft, scrollWidth, clientWidth } = container;
+      setShowLeftHint(scrollLeft > 10);
+      setShowRightHint(scrollLeft < scrollWidth - clientWidth - 10);
+    }
+  };
+
+  const handleTableScroll = () => {
+    updateScrollHints();
+  };
+
+  const scrollTableHorizontally = (direction: "left" | "right") => {
+    if (tableContainerRef.current) {
+      const container = tableContainerRef.current;
+      const scrollAmount = container.clientWidth * 0.8;
+      container.scrollTo({
+        left:
+          direction === "left"
+            ? container.scrollLeft - scrollAmount
+            : container.scrollLeft + scrollAmount,
+        behavior: "smooth",
+      });
+      setTimeout(updateScrollHints, 300);
+    }
+  };
+
   // Fetch states
   useEffect(() => {
     async function fetchStates() {
@@ -267,12 +355,10 @@ export default function CouponsRedeemed() {
         setStates(JSON.parse(cachedStates));
         return;
       }
-
       setIsStatesLoading(true);
       try {
         const res = await fetch(`${api_startpoint}/api/state_list_schools`);
         const data = await res.json();
-
         if (Array.isArray(data)) {
           const stateList = data.filter((state) => state);
           setStates(stateList);
@@ -285,11 +371,9 @@ export default function CouponsRedeemed() {
         setIsStatesLoading(false);
       }
     }
-
     fetchStates();
   }, []);
 
-  // Fetch cities
   const fetchCities = async (state: string) => {
     setIsCitiesLoading(true);
     try {
@@ -298,7 +382,6 @@ export default function CouponsRedeemed() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ state: state }),
       });
-
       if (!res.ok) throw new Error(`HTTP error! Status: ${res.status}`);
       const data = await res.json();
       setCities(data || []);
@@ -315,12 +398,10 @@ export default function CouponsRedeemed() {
     fetchCities(selectedState);
   }, [selectedState]);
 
-  // Initial city load
   useEffect(() => {
     fetchCities("");
   }, []);
 
-  // Fetch schools
   useEffect(() => {
     async function fetchSchools() {
       const cachedSchools = sessionStorage.getItem("SchoolList");
@@ -335,12 +416,10 @@ export default function CouponsRedeemed() {
           console.error("Error parsing cached schools:", err);
         }
       }
-
       setIsSchoolsLoading(true);
       try {
         const res = await fetch(`${api_startpoint}/api/school_list`);
         const data: { name: string }[] = await res.json();
-
         if (Array.isArray(data)) {
           let allProcessedSchools: string[] = [];
           const processSchoolsBatch = (
@@ -352,10 +431,8 @@ export default function CouponsRedeemed() {
               .slice(startIndex, endIndex)
               .map((item) => (item.name ? item.name.trim() : ""))
               .filter((name) => name !== "");
-
             allProcessedSchools = [...allProcessedSchools, ...batch];
             setSchools(allProcessedSchools);
-
             if (endIndex < data.length) {
               setTimeout(() => processSchoolsBatch(endIndex, batchSize), 0);
             } else {
@@ -377,11 +454,9 @@ export default function CouponsRedeemed() {
         setIsSchoolsLoading(false);
       }
     }
-
     fetchSchools();
   }, []);
 
-  // Fetch clusters
   useEffect(() => {
     async function fetchClusters() {
       const cachedClusters = sessionStorage.getItem("ClusterList");
@@ -389,7 +464,6 @@ export default function CouponsRedeemed() {
         setClusters(JSON.parse(cachedClusters));
         return;
       }
-
       setIsClustersLoading(true);
       try {
         const res = await fetch(`${api_startpoint}/api/school_clusters`);
@@ -408,7 +482,6 @@ export default function CouponsRedeemed() {
     fetchClusters();
   }, []);
 
-  // Fetch blocks
   useEffect(() => {
     async function fetchBlocks() {
       const cachedBlocks = sessionStorage.getItem("BlockList");
@@ -416,7 +489,6 @@ export default function CouponsRedeemed() {
         setBlocks(JSON.parse(cachedBlocks));
         return;
       }
-
       setIsBlocksLoading(true);
       try {
         const res = await fetch(`${api_startpoint}/api/school_blocks`);
@@ -435,7 +507,6 @@ export default function CouponsRedeemed() {
     fetchBlocks();
   }, []);
 
-  // Fetch districts
   useEffect(() => {
     async function fetchDistricts() {
       const cachedDistricts = sessionStorage.getItem("DistrictList");
@@ -443,7 +514,6 @@ export default function CouponsRedeemed() {
         setDistricts(JSON.parse(cachedDistricts));
         return;
       }
-
       setIsDistrictsLoading(true);
       try {
         const res = await fetch(`${api_startpoint}/api/school_districts`);
@@ -462,7 +532,6 @@ export default function CouponsRedeemed() {
     fetchDistricts();
   }, []);
 
-  // Fetch coupon titles
   useEffect(() => {
     async function fetchCouponTitles() {
       const cachedTitles = sessionStorage.getItem("couponTitles");
@@ -470,7 +539,6 @@ export default function CouponsRedeemed() {
         setCouponTitles(JSON.parse(cachedTitles));
         return;
       }
-
       setIsCouponTitlesLoading(true);
       try {
         const response = await fetch(`${api_startpoint}/api/coupon_titles`);
@@ -490,6 +558,9 @@ export default function CouponsRedeemed() {
   useEffect(() => {
     setIsClient(true);
     fetchCoupons("", "", "", "", "", "", "", "", "", "", "", "", "");
+    setTimeout(() => {
+      updateScrollHints();
+    }, 100);
   }, []);
 
   const fetchCoupons = async (
@@ -531,11 +602,13 @@ export default function CouponsRedeemed() {
           }),
         }
       );
-
       if (!response.ok) throw new Error("Network response was not ok");
       const tableData = await response.json();
       setCoupons(tableData as CouponRedemption[]);
       setError(null);
+      setTimeout(() => {
+        updateScrollHints();
+      }, 100);
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error occurred";
@@ -587,7 +660,7 @@ export default function CouponsRedeemed() {
 
   const exportToCSV = () => {
     const headers = [
-      "S.No.", // Added serial number header
+      "S.No.",
       "Student Name",
       "School Name",
       "Mobile Number",
@@ -604,36 +677,63 @@ export default function CouponsRedeemed() {
       "User ID",
       "Coupon Redeemed Date",
     ];
+
+    // Helper function to escape CSV values safely
+    const escapeCSVValue = (value: any) => {
+      if (value === null || value === undefined) return "";
+      const stringValue = String(value);
+
+      // Check if value contains comma, newline, or double quote
+      if (/[",\n]/.test(stringValue)) {
+        // Wrap in double quotes and escape existing double quotes by doubling them
+        return `"${stringValue.replace(/"/g, '""')}"`;
+      }
+      return stringValue;
+    };
+
+    // Create the header row
     const csvRows = [headers.join(",")];
+
     coupons.forEach((coupon, index) => {
-      const row = [
-        index + 1, // Serial number
-        coupon["Student Name"] || "",
-        coupon["School Name"] || "",
-        coupon["Mobile Number"] || "",
-        coupon.state || "",
-        coupon.city || "",
-        coupon.cluster || "",
-        coupon.block || "",
-        coupon.district || "",
-        coupon.grade || "",
-        coupon["Coupon Title"] || "",
-        coupon["Coins Redeemed"] || "",
-        (coupon as any).status || "",
-        coupon["School Code"] || "",
+      // Create an array of values for the row
+      const rowValues = [
+        index + 1,
+        coupon["Student Name"],
+        coupon["School Name"],
+        coupon["Mobile Number"],
+        coupon.state,
+        coupon.city,
+        coupon.cluster,
+        coupon.block,
+        coupon.district,
+        coupon.grade,
+        coupon["Coupon Title"],
+        coupon["Coins Redeemed"],
+        coupon.status,
+        coupon["School Code"],
         coupon.user_id,
-        coupon["Coupon Redeemed Date"] || "",
+        coupon["Coupon Redeemed Date"],
       ];
-      csvRows.push(row.join(","));
+
+      // Map over values to escape them, then join with comma
+      const rowString = rowValues.map(escapeCSVValue).join(",");
+      csvRows.push(rowString);
     });
+
     const csvContent = csvRows.join("\n");
-    const blob = new Blob([csvContent], { type: "text/csv" });
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = "student_coupon_redemptions.csv";
+    link.download = `student_coupon_redemptions_${new Date()
+      .toISOString()
+      .slice(0, 10)}.csv`;
     link.click();
+
+    // Cleanup
+    URL.revokeObjectURL(url);
   };
+
 
   const formatDate = (dateString: string): string => {
     if (!dateString) return "";
@@ -646,6 +746,47 @@ export default function CouponsRedeemed() {
     } catch (e) {
       return "";
     }
+  };
+
+  // ✅ Handle status edit start
+  const startEdit = (user_id: number, currentStatus: string) => {
+    setEditingUserId(user_id);
+    setEditStatusValue(currentStatus || "Processing");
+  };
+
+  // ✅ Handle status save
+  const saveStatus = async (user_id: number) => {
+    try {
+      const response = await fetch(
+        `${api_startpoint}/api/student_coupon_redeem_status_update`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ user_id, status: editStatusValue }),
+        }
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || "Failed to update status");
+      }
+
+      // Update local state
+      setCoupons((prev) =>
+        prev.map((c) =>
+          c.user_id === user_id ? { ...c, status: editStatusValue } : c
+        )
+      );
+      setEditingUserId(null);
+    } catch (err) {
+      console.error("Error saving status:", err);
+      alert("Failed to update status. Please try again.");
+    }
+  };
+
+  // ✅ Handle cancel edit
+  const cancelEdit = () => {
+    setEditingUserId(null);
   };
 
   if (!isClient) {
@@ -681,7 +822,6 @@ export default function CouponsRedeemed() {
     );
   }
 
-  // Pagination controls
   const indexOfLastItem = currentPage * itemsPerPage;
   const indexOfFirstItem = indexOfLastItem - itemsPerPage;
   const currentItems = coupons.slice(indexOfFirstItem, indexOfLastItem);
@@ -693,7 +833,6 @@ export default function CouponsRedeemed() {
         Showing {indexOfFirstItem + 1} to{" "}
         {Math.min(indexOfLastItem, coupons.length)} of {coupons.length} entries
       </div>
-
       <div className="d-flex gap-2 align-items-center">
         <select
           className="form-select form-select-sm"
@@ -709,7 +848,6 @@ export default function CouponsRedeemed() {
             </option>
           ))}
         </select>
-
         <button
           className="btn btn-outline-secondary"
           onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
@@ -722,7 +860,6 @@ export default function CouponsRedeemed() {
             Page {currentPage} of {totalPages}
           </span>
         </div>
-
         <button
           className="btn btn-outline-secondary"
           onClick={() =>
@@ -738,17 +875,17 @@ export default function CouponsRedeemed() {
 
   return (
     <div className={`page bg-light ${inter.className} font-sans`}>
+      <div dangerouslySetInnerHTML={{ __html: tableStyles }} />
       <Sidebar />
       <div className="page-wrapper" style={{ marginLeft: "250px" }}>
         <div className="page-body">
           <div className="container-xl pt-0 pb-4">
-            <div className="card">
+            <div className="card shadow-sm border-0">
               <div className="card-header">
                 <h3 className="card-title">Student Coupon Redemptions</h3>
               </div>
               <div className="card-body">
                 <div className="d-flex mb-3 gap-3 flex-wrap">
-                  {/* State Filter */}
                   <div className="col-12 col-md-6 col-lg-3">
                     <SearchableDropdown
                       options={states}
@@ -759,8 +896,6 @@ export default function CouponsRedeemed() {
                       maxDisplayItems={200}
                     />
                   </div>
-
-                  {/* City Filter */}
                   <div className="col-12 col-md-6 col-lg-3">
                     <SearchableDropdown
                       options={cities}
@@ -771,8 +906,6 @@ export default function CouponsRedeemed() {
                       maxDisplayItems={200}
                     />
                   </div>
-
-                  {/* School Filter */}
                   <div className="col-12 col-md-6 col-lg-3">
                     <SearchableDropdown
                       options={schools}
@@ -783,8 +916,6 @@ export default function CouponsRedeemed() {
                       maxDisplayItems={200}
                     />
                   </div>
-
-                  {/* School Code Filter */}
                   <div className="col-12 col-md-6 col-lg-3">
                     <input
                       type="text"
@@ -794,8 +925,6 @@ export default function CouponsRedeemed() {
                       onChange={(e) => setSchoolCodeInput(e.target.value)}
                     />
                   </div>
-
-                  {/* Cluster Filter */}
                   <div className="col-12 col-md-6 col-lg-3">
                     <SearchableDropdown
                       options={clusters}
@@ -806,8 +935,6 @@ export default function CouponsRedeemed() {
                       maxDisplayItems={200}
                     />
                   </div>
-
-                  {/* Block Filter */}
                   <div className="col-12 col-md-6 col-lg-3">
                     <SearchableDropdown
                       options={blocks}
@@ -818,8 +945,6 @@ export default function CouponsRedeemed() {
                       maxDisplayItems={200}
                     />
                   </div>
-
-                  {/* District Filter */}
                   <div className="col-12 col-md-6 col-lg-3">
                     <SearchableDropdown
                       options={districts}
@@ -830,7 +955,6 @@ export default function CouponsRedeemed() {
                       maxDisplayItems={200}
                     />
                   </div>
-
                   <div className="col-12 col-md-6 col-lg-3">
                     <div className="input-group gap-3 h-full">
                       <input
@@ -842,7 +966,6 @@ export default function CouponsRedeemed() {
                       />
                     </div>
                   </div>
-
                   <div className="col-12 col-md-6 col-lg-3">
                     <SearchableDropdown
                       options={grades}
@@ -852,7 +975,6 @@ export default function CouponsRedeemed() {
                       maxDisplayItems={12}
                     />
                   </div>
-
                   <div className="col-12 col-md-6 col-lg-3">
                     <SearchableDropdown
                       options={couponTitles}
@@ -863,7 +985,6 @@ export default function CouponsRedeemed() {
                       maxDisplayItems={200}
                     />
                   </div>
-
                   <div className="col-12 col-md-6 col-lg-3">
                     <div className="input-group gap-3 h-full">
                       <input
@@ -883,7 +1004,6 @@ export default function CouponsRedeemed() {
                       />
                     </div>
                   </div>
-
                   <div className="col-12 col-md-6 col-lg-3">
                     <input
                       type="date"
@@ -893,7 +1013,6 @@ export default function CouponsRedeemed() {
                       max={endDate || undefined}
                     />
                   </div>
-
                   <div className="col-12 col-md-6 col-lg-3">
                     <input
                       type="date"
@@ -903,7 +1022,6 @@ export default function CouponsRedeemed() {
                       min={startDate || undefined}
                     />
                   </div>
-
                   <div className="d-flex gap-3">
                     <button
                       className="btn btn-primary rounded-sm"
@@ -922,7 +1040,6 @@ export default function CouponsRedeemed() {
                     </button>
                   </div>
                 </div>
-
                 {loading ? (
                   <div className="text-center py-4">
                     <div className="spinner-border text-primary" role="status">
@@ -934,71 +1051,141 @@ export default function CouponsRedeemed() {
                     Error loading data: {error}
                   </div>
                 ) : (
-                  <div className="table-responsive">
-                    <table className="table table-vcenter table-hover">
-                      <thead>
-                        <tr>
-                          {/* Added serial number column header */}
-                          <th className="text-center">S.No.</th>
-                          <th>Student Name</th>
-                          <th>School Name</th>
-                          <th>Mobile Number</th>
-                          <th>State</th>
-                          <th>City</th>
-                          <th>Cluster</th>
-                          <th>Block</th>
-                          <th>District</th>
-                          <th>Grade</th>
-                          <th>Coupon Title</th>
-                          <th>Coins Redeemed</th>
-                          <th>Status</th>
-                          <th>School Code</th>
-                          <th>User ID</th>
-                          <th>Redeemed Date</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {currentItems.length === 0 ? (
+                  <div className="table-container">
+                    <button
+                      className={`scroll-hint-left ${
+                        !showLeftHint ? "scroll-hint-hidden" : ""
+                      }`}
+                      onClick={() => scrollTableHorizontally("left")}
+                      aria-label="Scroll left"
+                    >
+                      <IconChevronLeft size={24} />
+                    </button>
+                    <button
+                      className={`scroll-hint-right ${
+                        !showRightHint ? "scroll-hint-hidden" : ""
+                      }`}
+                      onClick={() => scrollTableHorizontally("right")}
+                      aria-label="Scroll right"
+                    >
+                      <IconChevronRight size={24} />
+                    </button>
+                    <div
+                      ref={tableContainerRef}
+                      className="overflow-x-scroll smooth-scroll rounded-lg shadow"
+                      onScroll={handleTableScroll}
+                      style={{ maxHeight: "70vh", overflowY: "auto" }}
+                    >
+                      <table className="table table-vcenter card-table w-full table-auto min-w-full bg-white border border-gray-200 table-sticky-header">
+                        <thead className="bg-gray-100 text-xs font-semibold uppercase text-gray-600">
                           <tr>
-                            {/* Updated colspan to 15 for new column */}
-                            <td colSpan={15} className="text-center">
-                              No redemptions found
-                            </td>
+                            <th className="text-center">S.No.</th>
+                            <th>Student Name</th>
+                            <th>School Name</th>
+                            <th>Mobile Number</th>
+                            <th>State</th>
+                            <th>City</th>
+                            <th>Cluster</th>
+                            <th>Block</th>
+                            <th>District</th>
+                            <th>Grade</th>
+                            <th>Coupon Title</th>
+                            <th>Coins Redeemed</th>
+                            <th>Status</th>
+                            <th>School Code</th>
+                            <th>User ID</th>
+                            <th>Redeemed Date</th>
                           </tr>
-                        ) : (
-                          currentItems.map((coupon, index) => (
-                            <tr key={index}>
-                              {/* Added serial number cell */}
-                              <td className="text-center">
-                                {indexOfFirstItem + index + 1}
-                              </td>
-                              <td>{coupon["Student Name"]}</td>
-                              <td>{coupon["School Name"]}</td>
-                              <td>{coupon["Mobile Number"]}</td>
-                              <td>{coupon.state}</td>
-                              <td>{coupon.city}</td>
-                              <td>{coupon.cluster || "-"}</td>
-                              <td>{coupon.block || "-"}</td>
-                              <td>{coupon.district || "-"}</td>
-                              <td>{coupon.grade}</td>
-                              <td>{coupon["Coupon Title"]}</td>
-                              <td>{coupon["Coins Redeemed"]}</td>
-                              <td>{(coupon as any).status || "-"}</td>
-                              <td>{coupon["School Code"]}</td>
-                              <td>{coupon.user_id}</td>
-                              <td>
-                                {formatDate(coupon["Coupon Redeemed Date"])}
+                        </thead>
+                        <tbody className="text-sm text-gray-700">
+                          {currentItems.length === 0 ? (
+                            <tr>
+                              <td colSpan={16} className="text-center">
+                                No redemptions found
                               </td>
                             </tr>
-                          ))
-                        )}
-                      </tbody>
-                    </table>
-
-                    {!loading && !error && coupons.length > 0 && (
-                      <PaginationControls />
-                    )}
+                          ) : (
+                            currentItems.map((coupon, index) => (
+                              <tr key={index} className="border-t">
+                                <td className="text-center">
+                                  {indexOfFirstItem + index + 1}
+                                </td>
+                                <td>{coupon["Student Name"]}</td>
+                                <td>{coupon["School Name"]}</td>
+                                <td>{coupon["Mobile Number"]}</td>
+                                <td>{coupon.state}</td>
+                                <td>{coupon.city}</td>
+                                <td>{coupon.cluster || "-"}</td>
+                                <td>{coupon.block || "-"}</td>
+                                <td>{coupon.district || "-"}</td>
+                                <td>{coupon.grade}</td>
+                                <td>{coupon["Coupon Title"]}</td>
+                                <td>{coupon["Coins Redeemed"]}</td>
+                                <td>
+                                  {editingUserId === coupon.user_id ? (
+                                    <div className="status-edit-row">
+                                      <select
+                                        value={editStatusValue}
+                                        onChange={(e) =>
+                                          setEditStatusValue(e.target.value)
+                                        }
+                                        className="form-select form-select-sm"
+                                      >
+                                        <option value="Processing">
+                                          Processing
+                                        </option>
+                                        <option value="Gift Card Sent">
+                                          Gift Card Sent
+                                        </option>
+                                        <option value="Product Sent">
+                                          Product Sent
+                                        </option>
+                                      </select>
+                                      <button
+                                        className="btn btn-success btn-sm"
+                                        onClick={() => saveStatus(coupon.user_id)}
+                                      >
+                                        Save
+                                      </button>
+                                      <button
+                                        className="btn btn-secondary btn-sm"
+                                        onClick={cancelEdit}
+                                      >
+                                        Cancel
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <>
+                                      {coupon.status || "Processing"}
+                                      <button
+                                        className="btn btn-outline-primary btn-sm ms-2"
+                                        onClick={() =>
+                                          startEdit(
+                                            coupon.user_id,
+                                            coupon.status || "Processing"
+                                          )
+                                        }
+                                      >
+                                        Edit
+                                      </button>
+                                    </>
+                                  )}
+                                </td>
+                                <td>{coupon["School Code"]}</td>
+                                <td>{coupon.user_id}</td>
+                                <td>
+                                  {formatDate(coupon["Coupon Redeemed Date"])}
+                                </td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
+                )}
+                {!loading && !error && coupons.length > 0 && (
+                  <PaginationControls />
                 )}
               </div>
             </div>
