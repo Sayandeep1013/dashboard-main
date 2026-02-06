@@ -138,9 +138,6 @@ def debug_env():
     password = os.getenv("DB_PASSWORD")
     return jsonify({"host": host, "user": user, "password": password})
 
-# @app.route('/')
-# def backup():
-#     return "Heya, thanks for checking"
 
 def upload_media(file):
     original_filename = file.filename
@@ -12086,8 +12083,25 @@ def notification_fetch_users_list_paginated():
                 filters.append(" AND s.name = %s")
                 params.append(school_name)
             if school_code:
-                filters.append(" AND u.school_code = %s")
-                params.append(school_code)
+                # Step 1: Look up school_id(s) from schools table using school_code (i.e., schools.code)
+                cursor.execute("""
+                    SELECT id
+                    FROM lifeapp.schools
+                    WHERE code = %s AND status = 1
+                """, (school_code,))
+                school_id_rows = cursor.fetchall()
+                resolved_school_ids = [row['id'] for row in school_id_rows]
+
+                school_conditions = ["u.school_code = %s"]
+                school_params = [school_code]
+
+                if resolved_school_ids:
+                    placeholders = ','.join(['%s'] * len(resolved_school_ids))
+                    school_conditions.append(f"u.school_id IN ({placeholders})")
+                    school_params.extend(resolved_school_ids)
+
+                filters.append(" AND (" + " OR ".join(school_conditions) + ")")
+                params.extend(school_params)
             if grade:
                 filters.append(" AND u.grade = %s")
                 params.append(grade)
@@ -12187,8 +12201,25 @@ def notification_fetch_user_ids_list():
                 filters.append(" AND s.name = %s")
                 params.append(school_name)
             if school_code:
-                filters.append(" AND u.school_code = %s")
-                params.append(school_code)
+                # Step 1: Look up school_id(s) from schools table using school_code (i.e., schools.code)
+                cursor.execute("""
+                    SELECT id
+                    FROM lifeapp.schools
+                    WHERE code = %s AND status = 1
+                """, (school_code,))
+                school_id_rows = cursor.fetchall()
+                resolved_school_ids = [row['id'] for row in school_id_rows]
+
+                school_conditions = ["u.school_code = %s"]
+                school_params = [school_code]
+
+                if resolved_school_ids:
+                    placeholders = ','.join(['%s'] * len(resolved_school_ids))
+                    school_conditions.append(f"u.school_id IN ({placeholders})")
+                    school_params.extend(resolved_school_ids)
+
+                filters.append(" AND (" + " OR ".join(school_conditions) + ")")
+                params.extend(school_params)
             if grade:
                 filters.append(" AND u.grade = %s")
                 params.append(grade)
@@ -12318,15 +12349,7 @@ def notification_get_school_list_by_location():
 @app.route('/api/notification_send', methods=['POST'])
 def notification_send():
     """
-    Sends a notification to selected users via the external API.
-    If a coupon_id is provided, updates the status in coupon_redeems to 'Gift Card Sent'
-    for the matching user_ids and coupon_id entries that were in 'Processing' status.
-    Expects JSON: {
-        "user_ids": [1, 2, 3],
-        "title": "Notification Title",
-        "message": "Notification Message",
-        "coupon_id": 5 (optional)
-    }
+    Sends a notification and updates coupon redemption status if a coupon_id is provided.
     """
     data = request.get_json()
     if not data:
@@ -12335,55 +12358,62 @@ def notification_send():
     user_ids = data.get('user_ids')
     title = data.get('title')
     message = data.get('message')
-    coupon_id = data.get('coupon_id') # Optional field
+    coupon_id = data.get('coupon_id')  # Optional
 
     # Validate input
     if not isinstance(user_ids, list) or not all(isinstance(uid, int) for uid in user_ids):
         return jsonify({'error': 'Invalid user_ids format. Must be a list of integers.'}), 400
-    if not title or not isinstance(title, str):
+    if not title:
         return jsonify({'error': 'Invalid or missing title'}), 400
-    if not message or not isinstance(message, str):
+    if not message:
         return jsonify({'error': 'Invalid or missing message'}), 400
-    if not user_ids:
-        return jsonify({'error': 'No user IDs provided'}), 400
-    if coupon_id is not None and not isinstance(coupon_id, int):
-         return jsonify({'error': 'Invalid coupon_id format. Must be an integer if provided.'}), 400
+    
+    # Ensure coupon_id is an integer if provided
+    if coupon_id is not None:
+        try:
+            coupon_id = int(coupon_id)
+        except ValueError:
+             return jsonify({'error': 'Invalid coupon_id format. Must be an integer.'}), 400
 
     NOTIFICATION_API_ENDPOINT = "https://api.life-lab.org/v3/admin/send-notification"
-    # Include coupon_id in the payload if it exists
     payload = {
         "user_ids": user_ids,
         "title": title,
         "message": message
     }
-    if coupon_id is not None:
+    if coupon_id:
         payload["coupon_id"] = coupon_id
 
     connection = None
     try:
+        # 1. Send Notification via External API
         response = requests.post(
             NOTIFICATION_API_ENDPOINT,
             json=payload,
             timeout=30
-            # headers={'Authorization': 'Bearer YOUR_TOKEN_HERE'}
         )
         response.raise_for_status()
+        
         try:
             api_response_data = response.json()
         except ValueError:
             api_response_data = {"message": response.text}
 
-        # --- New Logic: Update coupon_redeems status if notification sent successfully and coupon_id provided ---
-        # This runs *after* the external API call succeeds.
-        if coupon_id is not None and user_ids:
+        # 2. Update DB Status (Only if notification was successful)
+        db_update_info = "No coupon_id provided, skipping DB update."
+        rows_affected = 0
+        
+        if coupon_id and user_ids:
             connection = get_db_connection()
             if connection:
                 try:
                     with connection.cursor() as cursor:
-                        # Update status to 'Gift Card Sent' for the specific user_ids and coupon_id
-                        # where the current status is 'Processing'.
-                        # Use a placeholder for each user_id to prevent SQL injection.
+                        # Prepare placeholders for IN clause
                         placeholders = ','.join(['%s'] * len(user_ids))
+                        
+                        # UPDATED SQL: 
+                        # 1. Matches 'Processing' status
+                        # 2. Also updates status_updated_at
                         update_sql = f"""
                             UPDATE lifeapp.coupon_redeems
                             SET status = 'Gift Card Sent', status_updated_at = NOW()
@@ -12391,19 +12421,34 @@ def notification_send():
                             AND user_id IN ({placeholders})
                             AND status = 'Processing'
                         """
-                        # Parameters: coupon_id, followed by all user_ids
                         update_params = [coupon_id] + user_ids
+                        
+                        # Execute and Commit
                         rows_affected = cursor.execute(update_sql, update_params)
                         connection.commit()
-                        logging.info(f"Updated {rows_affected} rows in coupon_redeems to 'Gift Card Sent' for coupon_id {coupon_id} and selected users.")
+                        
+                        db_update_info = f"Successfully updated {rows_affected} rows to 'Gift Card Sent'."
+                        logging.info(f"Notification Send: {db_update_info}")
+                        
                 except Exception as db_error:
-                    logging.error(f"Error updating coupon_redeems status: {db_error}")
-                    # Note: Even if DB update fails, we still consider the notification sent.
-                    # You might want to log this or handle it differently based on requirements.
+                    # Log the specific DB error so we can see it in server logs
+                    error_msg = f"Database update failed: {str(db_error)}"
+                    logging.error(error_msg)
+                    db_update_info = error_msg
+                    # We do NOT return 500 here because the notification was already sent successfully.
+                    # We pass the warning in the response.
+                    api_response_data['db_warning'] = error_msg
                 finally:
                     connection.close()
-
+            else:
+                db_update_info = "Could not establish database connection for update."
+        
+        # Add DB result to response for debugging
+        api_response_data['db_update_status'] = db_update_info
+        api_response_data['rows_updated'] = rows_affected
+        
         return jsonify(api_response_data), response.status_code
+
     except requests.exceptions.RequestException as e:
         logging.error(f"Error calling external notification API: {e}")
         return jsonify({'error': f'Failed to send notification: {str(e)}'}), 500
@@ -12411,7 +12456,6 @@ def notification_send():
         logging.error(f"Unexpected error in /api/notification_send: {e}")
         return jsonify({'error': 'An unexpected error occurred'}), 500
     finally:
-        # Ensure connection is closed if it was opened outside the request exception block
         if connection and connection.open:
             connection.close()
 
