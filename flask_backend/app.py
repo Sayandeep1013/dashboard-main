@@ -9825,14 +9825,19 @@ def upload_schools_csv():
     if file.filename == '':
         return jsonify({"error": "No selected file"}), 400
         
-    if not file.filename.endswith('.csv'):
+    # FIX 1: Make extension check case-insensitive
+    if not file.filename.lower().endswith('.csv'):
         return jsonify({"error": "File must be a CSV"}), 400
 
     try:
-        # Read CSV file
-        stream = io.StringIO(file.stream.read().decode("UTF8"), newline=None)
-        csv_reader = csv.DictReader(stream)
+        # FIX 2: Use 'utf-8-sig' to automatically handle/remove the BOM (\ufeff)
+        stream = io.StringIO(file.stream.read().decode("utf-8-sig"), newline=None)
         
+        # Fix 3: Handle loose CSV formats (strip whitespace from headers)
+        csv_reader = csv.DictReader(stream)
+        # Normalize headers: remove leading/trailing spaces from keys
+        csv_reader.fieldnames = [name.strip() for name in csv_reader.fieldnames]
+
         connection = get_db_connection()
         with connection.cursor() as cursor:
             sql = """
@@ -9844,8 +9849,11 @@ def upload_schools_csv():
             """
             
             count = 0
+            errors = []
+            
             for row in csv_reader:
-                # Map Excel columns to database fields
+                # Map CSV columns to database fields
+                # We use .strip() on keys just to be safe
                 mapped_data = {
                     'name': row.get('school_name', '').strip(),
                     'state': row.get('state_name', '').strip(),
@@ -9855,7 +9863,7 @@ def upload_schools_csv():
                     'cluster': row.get('cluster_name', '').strip(),
                     'pin_code': row.get('pin_code', '').strip(),
                     'code': row.get('school_code', '').strip(),
-                    'donor_name': row.get('donor_name', '').strip(),            # ← new
+                    'donor_name': row.get('donor_name', '').strip(),
                     'app_visible': row.get('app_visible', 'No').strip().lower(),
                     'is_life_lab': row.get('is_life_lab', 'No').strip().lower(),
                     'status': row.get('status', 'Active').strip().lower()
@@ -9863,8 +9871,12 @@ def upload_schools_csv():
 
                 # Validate required fields
                 required_fields = ['name', 'state', 'city', 'district', 'pin_code']
-                if not all(mapped_data[field] for field in required_fields):
-                    continue  # Skip invalid rows
+                missing = [f for f in required_fields if not mapped_data[f]]
+                
+                if missing:
+                    # Optional: Print/Log skipped rows for debugging
+                    print(f"Skipping row {count+1}: Missing {missing}")
+                    continue 
 
                 # Convert values
                 app_visible_val = 1 if mapped_data['app_visible'] == 'yes' else 0
@@ -9880,7 +9892,7 @@ def upload_schools_csv():
                     mapped_data['cluster'],
                     mapped_data['pin_code'],
                     mapped_data['code'],
-                    mapped_data['donor_name'],    # ← pass donor_name
+                    mapped_data['donor_name'],
                     app_visible_val,
                     is_life_lab_val,
                     status_val
@@ -9888,35 +9900,18 @@ def upload_schools_csv():
                 count += 1
             
             connection.commit()
+            
+            if count == 0:
+                return jsonify({"error": "No valid rows found. Check CSV headers."}), 400
+
             return jsonify({"message": f"Successfully uploaded {count} schools"}), 201
             
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        print(f"CSV Upload Error: {str(e)}") # Print to server logs
+        return jsonify({"error": f"Server Error: {str(e)}"}), 500
     finally:
         if 'connection' in locals():
             connection.close()
-
-# @app.route('/api/state_list', methods=['GET'])
-# def get_state_list():
-#     """
-#     Returns distinct states from the schools table.
-#     """
-#     try:
-#         connection = get_db_connection()
-#         with connection.cursor() as cursor:
-#             sql = """
-#                 SELECT DISTINCT(state) 
-#                 FROM lifeapp.schools 
-#                 WHERE state IS NOT NULL AND state != '' AND state != '2'
-#             """
-#             cursor.execute(sql)
-#             result = cursor.fetchall()
-#             states = [row['state'] for row in result]
-#         return jsonify(states)
-#     except Exception as e:
-#         return jsonify({"error": str(e)}), 500
-#     finally:
-#         connection.close()
 
 @app.route('/api/cities_for_state', methods=['GET'])
 def get_cities_for_state():

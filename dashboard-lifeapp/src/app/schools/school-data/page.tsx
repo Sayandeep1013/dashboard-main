@@ -494,28 +494,41 @@ export default function SchoolData() {
   const [showCsvModal, setShowCsvModal] = useState(false);
   const [csvFile, setCsvFile] = useState<File | null>(null);
   const [uploadStatus, setUploadStatus] = useState<string | null>(null);
+
   // Add this handler
   const handleCsvUpload = async () => {
-    if (!csvFile) return;
-    const formData = new FormData();
-    formData.append("csv", csvFile);
-    try {
-      setUploadStatus("Uploading...");
-      const res = await fetch(`${api_startpoint}/api/upload_schools_csv`, {
-        method: "POST",
-        body: formData,
-      });
-      if (!res.ok) throw new Error(await res.text());
-      setUploadStatus("Upload successful!");
-      setTimeout(() => {
-        setShowCsvModal(false);
-        fetchSchools();
-      }, 1500);
-    } catch (error) {
-      console.error("Upload failed:", error);
-      setUploadStatus("Upload failed. Please check the file format.");
-    }
-  };
+      if (!csvFile) return;
+      const formData = new FormData();
+      formData.append("csv", csvFile);
+      
+      try {
+        setUploadStatus("Uploading...");
+        const res = await fetch(`${api_startpoint}/api/upload_schools_csv`, {
+          method: "POST",
+          body: formData,
+        });
+
+        // Get the real error message from the server
+        const result = await res.json(); 
+
+        if (!res.ok) {
+          throw new Error(result.error || "Upload failed");
+        }
+
+        setUploadStatus(result.message || "Upload successful!");
+        setTimeout(() => {
+          setShowCsvModal(false);
+          setUploadStatus(null); // Clear status
+          fetchSchools();
+        }, 1500);
+
+      } catch (error: any) {
+        console.error("Upload failed:", error);
+        // Show the ACTUAL error message to the user
+        setUploadStatus(`Error: ${error.message}`);
+      }
+    };
+
   // -------- CSV Template Download Setup --------
   const csvTemplate =
     "school_name,state_name,city_name,district_name,block_name,cluster_name,pin_code,school_code,donor_name,app_visible,is_life_lab,status";
