@@ -4,3 +4,4 @@
 backend
 .vscode/
 .venv/
+venv/

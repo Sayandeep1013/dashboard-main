@@ -93,11 +93,11 @@ import { Sidebar } from "@/components/ui/sidebar";
 import { Inter } from "next/font/google";
 const inter = Inter({ subsets: ["latin"] });
 
-// const api_startpoint = "http://localhost:5000";
+const api_startpoint = "http://localhost:5000";
 // const api_startpoint = 'https://lifeapp-api-vv1.vercel.app'
 // const api_startpoint = "http://152.42.239.141:5000";
 // const api_startpoint = "http://152.42.239.141:5000";
-const api_startpoint = "https://admin-api.life-lab.org";
+// const api_startpoint = "https://admin-api.life-lab.org";
 
 import { formatWeeklyXAxisLabel } from "@/components/ui/echartsHelpers";
 interface userTypeChart {
@@ -236,8 +236,8 @@ const LazyChart = forwardRef<
     id?: string;
   }
 >(({ option, style, loading, id = `chart-${Math.random()
-    .toString(36)
-    .substr(2, 9)}` }, ref) => {
+  .toString(36)
+  .substr(2, 9)}` }, ref) => {
   const [isVisible, setIsVisible] = useState(false);
   const [hasBeenVisible, setHasBeenVisible] = useState(false);
   const [chartError, setChartError] = useState<string | null>(null);
@@ -309,12 +309,7 @@ const toQueryString = (obj: Record<string, any>) => {
 };
 export default function UserAnalyticsDashboard() {
   const router = useRouter();
-  useEffect(() => {
-    const isLoggedIn = sessionStorage.getItem("isLoggedIn");
-    if (!isLoggedIn) {
-      router.push("/login");
-    }
-  }, [router]);
+
   const formatPeriod = (period: string, grouping: string) => {
     if (grouping === "daily") {
       try {
@@ -1546,8 +1541,8 @@ export default function UserAnalyticsDashboard() {
         const dataArray = Array.isArray(data)
           ? data
           : Array.isArray(data?.data)
-          ? data.data
-          : [];
+            ? data.data
+            : [];
         console.log(
           " [fetch] normalised array:",
           JSON.parse(JSON.stringify(dataArray))
@@ -1748,18 +1743,18 @@ export default function UserAnalyticsDashboard() {
   }, [appliedFilters]);
   const filteredData = selectedYear
     ? chartData.filter(
-        (item) => item.month && item.month.startsWith(selectedYear)
-      )
+      (item) => item.month && item.month.startsWith(selectedYear)
+    )
     : chartData;
   const years: string[] = chartData.length
     ? Array.from(
-        new Set(
-          chartData
-            .filter((item) => item.month)
-            .map((item) => (item.month ? item.month.split("-")[0] : ""))
-            .filter((year) => year !== "")
-        )
+      new Set(
+        chartData
+          .filter((item) => item.month)
+          .map((item) => (item.month ? item.month.split("-")[0] : ""))
+          .filter((year) => year !== "")
       )
+    )
     : [];
   const [totalUsers, setTotalUsers] = useState<number>(0);
   const [activeUsers, setActiveUsers] = useState<number>(0);
@@ -2167,8 +2162,8 @@ export default function UserAnalyticsDashboard() {
     new Set(
       Array.isArray(EchartDataGrade)
         ? EchartDataGrade.flatMap((item) =>
-            Object.keys(item).filter((key) => key !== "period")
-          )
+          Object.keys(item).filter((key) => key !== "period")
+        )
         : []
     )
   );
@@ -2317,8 +2312,8 @@ export default function UserAnalyticsDashboard() {
     new Set(
       Array.isArray(EchartDataTeacherGrade)
         ? EchartDataTeacherGrade.flatMap((item) =>
-            Object.keys(item).filter((key) => key !== "period")
-          )
+          Object.keys(item).filter((key) => key !== "period")
+        )
         : []
     )
   );
@@ -3479,9 +3474,9 @@ export default function UserAnalyticsDashboard() {
         const data = await res.json();
         const parsedSubjects = Array.isArray(data)
           ? data.map((subject: any) => ({
-              id: subject.id,
-              title: JSON.parse(subject.title).en,
-            }))
+            id: subject.id,
+            title: JSON.parse(subject.title).en,
+          }))
           : [];
         setQuizSubjects(parsedSubjects);
       } catch (error) {
@@ -4618,9 +4613,9 @@ export default function UserAnalyticsDashboard() {
       .then((data) => {
         const transformed = Array.isArray(data)
           ? data.map((item) => ({
-              ...item,
-              period: item.period || "Unknown",
-            }))
+            ...item,
+            period: item.period || "Unknown",
+          }))
           : [];
         setEchartDataLevel(transformed);
       })
@@ -4638,10 +4633,10 @@ export default function UserAnalyticsDashboard() {
       level === "level1"
         ? "Level 1: Grade 1 – 5"
         : level === "level2"
-        ? "Level 2: Grade 6+"
-        : level === "level3"
-        ? "Level 3: Grade 7+"
-        : "Level 4: Grade 8+",
+          ? "Level 2: Grade 6+"
+          : level === "level3"
+            ? "Level 3: Grade 7+"
+            : "Level 4: Grade 8+",
     type: "bar" as const,
     stack: "total" as const,
     data: EchartDataLevel.map((item) => item[`${level}_count`] || 0),
@@ -5081,15 +5076,13 @@ export default function UserAnalyticsDashboard() {
         const sb = lvl.status_breakdown || {};
         txt +=
           `<b>${lvl.level}:</b> ${lvl.count} ` +
-          `(Approved: ${sb.approved || 0} | Rejected: ${
-            sb.rejected || 0
+          `(Approved: ${sb.approved || 0} | Rejected: ${sb.rejected || 0
           } | Requested: ${sb.requested || 0})<br/>`;
         lvl.subjects.forEach((sub: any) => {
           const ssb = sub.status_breakdown || {};
           txt +=
             `&nbsp;&nbsp; ${sub.subject}: ${sub.count} ` +
-            `(Approved: ${ssb.approved || 0} | Rejected: ${
-              ssb.rejected || 0
+            `(Approved: ${ssb.approved || 0} | Rejected: ${ssb.rejected || 0
             } | Requested: ${ssb.requested || 0})<br/>`;
         });
       });
@@ -5412,15 +5405,15 @@ export default function UserAnalyticsDashboard() {
                           (globalFilters.state === appliedFilters.state &&
                             globalFilters.city === appliedFilters.city &&
                             globalFilters.schoolCode ===
-                              appliedFilters.schoolCode &&
+                            appliedFilters.schoolCode &&
                             globalFilters.userType ===
-                              appliedFilters.userType &&
+                            appliedFilters.userType &&
                             globalFilters.grade === appliedFilters.grade &&
                             globalFilters.gender === appliedFilters.gender &&
                             globalFilters.dateRange ===
-                              appliedFilters.dateRange &&
+                            appliedFilters.dateRange &&
                             globalFilters.startDate ===
-                              appliedFilters.startDate &&
+                            appliedFilters.startDate &&
                             globalFilters.endDate === appliedFilters.endDate)
                         }
                       >

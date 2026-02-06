@@ -80,14 +80,11 @@ def get_db_connection():
 def db_mode():
     return jsonify({"mode": CURRENT_DB_MODE})
 
-
 @app.route("/api/toggle-db", methods=["POST"])
 def toggle_db():
     global CURRENT_DB_MODE
     CURRENT_DB_MODE = "staging" if CURRENT_DB_MODE == "prod" else "prod"
     return jsonify({"mode": CURRENT_DB_MODE})
-
-
 
 @app.route("/api/login", methods=["POST"])
 def admin_login():
