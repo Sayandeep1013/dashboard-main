@@ -13,10 +13,17 @@ export default function LoginPage() {
 
     try {
       const res = await fetch('https://admin-api.life-lab.org/api/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
-      })
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password }),
+    })
+
+    // try {
+    //   const res = await fetch('http://localhost:3000/api/login', {
+    //   method: 'POST',
+    //   headers: { 'Content-Type': 'application/json' },
+    //   body: JSON.stringify({ email, password }),
+    // })
 
       const data = await res.json()
 

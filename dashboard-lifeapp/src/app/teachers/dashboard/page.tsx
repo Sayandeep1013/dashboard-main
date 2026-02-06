@@ -335,6 +335,7 @@ function SearchableDropdown({
 // const api_startpoint = "http://localhost:5000";
 // const api_startpoint = 'https://lifeapp-api-vv1.vercel.app'
 // const api_startpoint = "http://152.42.239.141:5000";
+// const api_startpoint = "http://152.42.239.141:5000";
 const api_startpoint = "https://admin-api.life-lab.org";
 
 
@@ -830,7 +831,7 @@ export default function TeachersDashboard() {
   useEffect(() => {
     async function fetchTeacherCount() {
       try {
-        const res = await fetch(`${api_startpoint}/api/teacher-count`, {
+        const res = await fetch(`${api_startpoint}/api/teacher-count-dashboard`, {
           method: "POST",
         });
         const data = await res.json();
@@ -867,7 +868,7 @@ export default function TeachersDashboard() {
 
         // Fetch state-wise student count from API
         const apiResponse = await fetch(
-          `${api_startpoint}/api/demograph-teachers`,
+          `${api_startpoint}/api/demograph-teachers-dashboard`,
           {
             method: "POST",
           }
@@ -998,7 +999,7 @@ export default function TeachersDashboard() {
   useEffect(() => {
     async function fetchSchoolCount() {
       try {
-        const res = await fetch(`${api_startpoint}/api/school_count`, {
+        const res = await fetch(`${api_startpoint}/api/school_count_dashboard`, {
           method: "POST",
         });
         const data = await res.json();
@@ -1674,7 +1675,7 @@ export default function TeachersDashboard() {
     async function fetchTmcAssignedByTeacher() {
       try {
         const res = await fetch(
-          `${api_startpoint}/api/total-missions-completed-assigned-by-teacher`,
+          `${api_startpoint}/api/total-missions-completed-assigned-by-teacher-dashboard`,
           {
             method: "POST",
           }
@@ -1685,7 +1686,7 @@ export default function TeachersDashboard() {
         }
       } catch (error) {
         console.error(
-          "Error fetching total-missions-completed-assigned-by-teacher:",
+          "Error fetching total-missions-completed-assigned-by-teacher-dashboard:",
           error
         );
       }
@@ -1894,25 +1895,25 @@ export default function TeachersDashboard() {
                   icon: <IconUser />,
                   color: "bg-purple",
                 },
-                {
-                  title: "Active Teachers",
-                  value: 0,
-                  icon: <IconUserFilled />,
-                  color: "bg-teal",
-                },
-                {
-                  title: "Inactive Teachers",
-                  value: 0,
-                  icon: <IconUserExclamation />,
-                  color: "bg-orange",
-                },
-                {
-                  title: "Highest Online User Count",
-                  value: 0,
-                  icon: <IconUserScan />,
-                  color: "bg-blue",
-                  suffix: "",
-                },
+                // {
+                //   title: "Active Teachers",
+                //   value: 0,
+                //   icon: <IconUserFilled />,
+                //   color: "bg-teal",
+                // },
+                // {
+                //   title: "Inactive Teachers",
+                //   value: 0,
+                //   icon: <IconUserExclamation />,
+                //   color: "bg-orange",
+                // },
+                // {
+                //   title: "Highest Online User Count",
+                //   value: 0,
+                //   icon: <IconUserScan />,
+                //   color: "bg-blue",
+                //   suffix: "",
+                // },
                 {
                   title: "Total Number of Schools",
                   value: schoolCount,
@@ -1947,7 +1948,7 @@ export default function TeachersDashboard() {
                   color: "bg-sky-900",
                 },
                 {
-                  title: "Total Vision Score Earned",
+                  title: "Total Vision Coins Earned",
                   value: totalVisionScore,
                   icon: <IconUser />,
                   color: "bg-sky-900",

@@ -8,6 +8,7 @@ import NumberFlow from '@number-flow/react';
 // const api_startpoint = "http://localhost:5000";
 // const api_startpoint = 'https://lifeapp-api-vv1.vercel.app'
 // const api_startpoint = "http://152.42.239.141:5000";
+// const api_startpoint = "http://152.42.239.141:5000";
 const api_startpoint = "https://admin-api.life-lab.org";
 
 const inter = Inter({ subsets: ['latin'] });
@@ -88,29 +89,49 @@ export default function SchoolsDashboard() {
   const [file, setFile] = useState<File | null>(null);
 
   const [schoolCount, setSchoolCount] = useState<number>(0);
-    useEffect( () => {
-        async function fetchSchoolCount() {
-            try {
-                const res = await fetch(`${api_startpoint}/api/school_count`, {
-                    method: 'POST'
-                })
-                const data = await res.json()
-                if (data && data.length > 0) {
-                    setSchoolCount(data[0].count)
-                }
-            } catch (error) {
-                console.error('Error fetching user count:', error)
-            }
-        }
-        fetchSchoolCount()
-    }, [])
+  const [totalUsers, setTotalUsers] = useState<number>(0);
+  const [activeSchools, setActiveSchools] = useState<number>(0);
+  const [inactiveSchools, setInactiveSchools] = useState<number>(0);
+
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        // Fetch school count
+        const schoolRes = await fetch(
+          `${api_startpoint}/api/school_count_school_dashboard`
+        );
+        const schoolData = await schoolRes.json();
+        setSchoolCount(schoolData?.count || 0);
+
+        // Fetch total users
+        const usersRes = await fetch(`${api_startpoint}/api/total_users_school_dashboard`);
+        const usersData = await usersRes.json();
+        setTotalUsers(usersData?.count || 0);
+
+        // Fetch active schools
+        const activeRes = await fetch(`${api_startpoint}/api/active_school_dashboard`);
+        const activeData = await activeRes.json();
+        setActiveSchools(activeData?.count || 0);
+
+        // Fetch inactive schools
+        const inactiveRes = await fetch(`${api_startpoint}/api/inactive_school_dashboard`);
+        const inactiveData = await inactiveRes.json();
+        setInactiveSchools(inactiveData?.count || 0);
+      } catch (error) {
+        console.error("Error fetching dashboard metrics:", error);
+      }
+    };
+
+    fetchData();
+  }, []);
 
   const stats = [
-    { title: 'TOTAL SCHOOLS', value: schoolCount },
-    { title: 'TOTAL USERS', value: '-' },
-    { title: 'ACTIVE SCHOOLS', value: '-' },
-    { title: 'INACTIVE SCHOOLS', value: '-' }
+    { title: "TOTAL SCHOOLS", value: schoolCount },
+    { title: "TOTAL USERS", value: totalUsers },
+    { title: "ACTIVE SCHOOLS", value: activeSchools },
+    { title: "INACTIVE SCHOOLS", value: inactiveSchools },
   ];
+
 
   // const tableData: TableData[] = [
   //   {

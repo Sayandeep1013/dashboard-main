@@ -11,7 +11,9 @@ import { IconEdit, IconTrash } from '@tabler/icons-react';
 // const api_startpoint = "http://localhost:5000";
 // const api_startpoint = 'https://lifeapp-api-vv1.vercel.app'
 // const api_startpoint = "http://152.42.239.141:5000";
+// const api_startpoint = "http://152.42.239.141:5000";
 const api_startpoint = "https://admin-api.life-lab.org";
+
 interface Language {
     id: number;
     title: string;
@@ -143,23 +145,29 @@ export default function SettingsLanguages() {
 
     const handleDelete = async (id: number) => { 
         if (!window.confirm("Are you sure you want to delete this language?")) return;
-    
+
         try {
             const response = await fetch(`${api_startpoint}/api/languages_delete/${id}`, {
                 method: 'DELETE',
             });
-    
+
             if (response.ok) {
-                setLanguages(languages.filter(language => language.id !== id)); // Remove from UI
-                fetchLanguages();
+                // Only use one method to update the UI, not both
+                // Remove the local filter and rely on fetchLanguages to refresh the data
+                fetchLanguages(); // This will refresh the entire list
+                
+                // Optional: Show success message
+                alert("Language deleted successfully!");
             } else {
-                console.error("Failed to delete language");
+                const result = await response.json();
+                alert(`Error: ${result.error || "Failed to delete language"}`);
             }
         } catch (error) {
             console.error("Error deleting language:", error);
+            alert("Network error while deleting language");
         }
     };
-    
+        
     return (
         <div className={`page bg-body ${inter.className} font-sans`}>
             <Sidebar />
@@ -252,9 +260,8 @@ export default function SettingsLanguages() {
                                         required
                                     >
                                         <option value="">Select status</option>
-                                        <option value= {1}>Active</option>
+                                        <option value={1}>Active</option>
                                         <option value={0}>Inactive</option>
-                                        
                                     </select>
                                                 
                                 </div>

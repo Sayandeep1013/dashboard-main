@@ -208,8 +208,8 @@ export function Sidebar() {
       <div>
         <div className="p-6">
           <div className="flex items-center gap-2">
-            <Terminal className="h-6 w-6" />
-            <span className="text-xl font-semibold">LifeApp</span>
+            {/* <Terminal className="h-6 w-6" /> */}
+            <span className="text-2xl font-semibold">LifeApp</span>
           </div>
         </div>
 

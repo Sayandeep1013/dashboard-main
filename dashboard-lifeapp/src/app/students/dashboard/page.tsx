@@ -25,7 +25,6 @@ import {
   IconChevronLeft,
   IconChevronRight,
 } from "@tabler/icons-react";
-
 import ReactECharts from "echarts-for-react";
 import {
   BarChart3,
@@ -36,6 +35,24 @@ import {
   XCircle,
 } from "lucide-react";
 import error from "next/error";
+
+// =============== NEW: Weekly Label Formatter Utility ===============
+const formatWeeklyXAxisLabel = (value: string, currentGrouping: string) => {
+  if (currentGrouping !== "weekly") return value;
+  const [yearStr, weekStr] = value.split("-");
+  const year = parseInt(yearStr, 10);
+  const week = parseInt(weekStr, 10);
+  if (!year || !week) return value;
+  const jan1 = new Date(year, 0, 1);
+  const daysOffset = (week - 1) * 7 - ((jan1.getDay() + 6) % 7);
+  const weekStart = new Date(jan1.getTime() + daysOffset * 86400000);
+  const weekEnd = new Date(weekStart.getTime() + 6 * 86400000);
+  const format = (d: Date) =>
+    d.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+  const humanRange = `${format(weekStart)} – ${format(weekEnd)}`;
+  return ["{a|" + value + "}", "{b|" + humanRange + "}"].join("\n");
+};
+// ===================================================================
 const groupings = [
   "daily",
   "weekly",
@@ -52,20 +69,16 @@ interface SearchableDropdownProps {
   isLoading?: boolean;
   maxDisplayItems?: number;
 }
-
 import dynamic from "next/dynamic";
-
 const HighchartsReact = dynamic(() => import("highcharts-react-official"), {
   ssr: false,
 });
-
 // Add CSS styles for the new features
 const tableStyles = `
   <style>
     .table-container {
       position: relative;
     }
-    
     .scroll-hint-left, .scroll-hint-right {
       position: absolute;
       top: 50%;
@@ -80,20 +93,16 @@ const tableStyles = `
       border: none;
       box-shadow: 0 2px 10px rgba(0,0,0,0.3);
     }
-    
     .scroll-hint-left {
       left: 15px;
     }
-    
     .scroll-hint-right {
       right: 15px;
     }
-    
     .scroll-hint-hidden {
       opacity: 0;
       pointer-events: none;
     }
-    
     /* Sticky table header */
     .table-sticky-header thead th {
       position: sticky;
@@ -102,39 +111,32 @@ const tableStyles = `
       z-index: 1;
       box-shadow: 0 2px 4px rgba(0,0,0,0.1);
     }
-    
     /* Smooth scrolling */
     .smooth-scroll {
       scroll-behavior: smooth;
     }
   </style>
 `;
-
 // import Highcharts from 'highcharts/highmaps';
 // const Highcharts = dynamic(() => import('highcharts/highmaps'), { ssr: false });
-
 interface DemographData {
   state: string;
   count: string;
 }
-
 interface DemographChartdata {
   code: string;
   value: number;
 }
-
 interface StudentsByGrade {
   grade: number | null;
   count: number;
 }
-
 interface challengesCompletedData {
   count: number;
   la_mission_id: number | null;
   title: string;
   description: string;
 }
-
 interface MissionStatusData {
   period: string;
   "Mission Requested"?: number;
@@ -142,14 +144,12 @@ interface MissionStatusData {
   "Mission Approved"?: number;
   [key: string]: string | number | undefined; // Allow dynamic keys
 }
-
 interface MissionRow {
   period: string | null;
   count: number;
   subject_title: string;
   level_title: string;
 }
-
 interface TransformedPeriod {
   period: string;
   // For each level, the total count
@@ -161,7 +161,6 @@ interface TransformedPeriod {
     };
   };
 }
-
 function SearchableDropdown({
   options,
   placeholder,
@@ -177,48 +176,39 @@ function SearchableDropdown({
   const dropdownRef = useRef<HTMLDivElement>(null);
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-
   // Implement debounce for search
   useEffect(() => {
     if (searchTimeoutRef.current) {
       clearTimeout(searchTimeoutRef.current);
     }
-
     searchTimeoutRef.current = setTimeout(() => {
       setDebouncedSearchTerm(searchTerm);
       // Reset displayed items when search changes
       setDisplayedItems(maxDisplayItems);
     }, 300);
-
     return () => {
       if (searchTimeoutRef.current) {
         clearTimeout(searchTimeoutRef.current);
       }
     };
   }, [searchTerm, maxDisplayItems]);
-
   // Get filtered options based on search term
   const filteredOptions = useMemo(() => {
     if (!debouncedSearchTerm.trim()) {
       return options;
     }
-
     const searchLower = debouncedSearchTerm.toLowerCase();
-
     return options.filter(
       (option) =>
         typeof option === "string" && option.toLowerCase().includes(searchLower)
     );
   }, [options, debouncedSearchTerm]);
-
   // Handle scroll event to implement infinite scrolling
   const handleScroll = useCallback(() => {
     if (!scrollContainerRef.current) return;
-
     const { scrollTop, scrollHeight, clientHeight } =
       scrollContainerRef.current;
     const scrollPosition = scrollTop + clientHeight;
-
     // If user has scrolled to near bottom, load more items
     if (
       scrollHeight - scrollPosition < 50 &&
@@ -229,21 +219,18 @@ function SearchableDropdown({
       );
     }
   }, [displayedItems, filteredOptions.length, maxDisplayItems]);
-
   // Add scroll event listener
   useEffect(() => {
     const scrollContainer = scrollContainerRef.current;
     if (scrollContainer) {
       scrollContainer.addEventListener("scroll", handleScroll);
     }
-
     return () => {
       if (scrollContainer) {
         scrollContainer.removeEventListener("scroll", handleScroll);
       }
     };
   }, [handleScroll]);
-
   // Handle clicks outside the dropdown
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -254,16 +241,13 @@ function SearchableDropdown({
         setIsOpen(false);
       }
     }
-
     if (isOpen) {
       document.addEventListener("mousedown", handleClickOutside);
     }
-
     return () => {
       document.removeEventListener("mousedown", handleClickOutside);
     };
   }, [isOpen]);
-
   const handleSelect = (option: string) => {
     const newValues = value.includes(option)
       ? value.filter((item) => item !== option)
@@ -274,15 +258,12 @@ function SearchableDropdown({
     setDebouncedSearchTerm("");
     setDisplayedItems(maxDisplayItems);
   };
-
   // The options to display - limited by displayedItems count
   const visibleOptions = useMemo(() => {
     return filteredOptions.slice(0, displayedItems);
   }, [filteredOptions, displayedItems]);
-
   // Calculate if there are more items to load
   const hasMoreItems = filteredOptions.length > displayedItems;
-
   return (
     <div className="relative" ref={dropdownRef}>
       <div
@@ -296,12 +277,11 @@ function SearchableDropdown({
           {isLoading
             ? "Loading..."
             : value.length
-            ? `${value.length} selected`
-            : placeholder}
+              ? `${value.length} selected`
+              : placeholder}
         </span>
         <ChevronDown className="h-4 w-4 text-gray-500" />
       </div>
-
       {isOpen && (
         <div className="absolute z-10 mt-1 w-full rounded-md border border-gray-200 bg-white shadow-lg">
           <div className="p-2">
@@ -341,7 +321,6 @@ function SearchableDropdown({
                     No results found
                   </div>
                 )}
-
                 {/* Show loading more indicator */}
                 {hasMoreItems && (
                   <div className="flex items-center justify-center px-3 py-2 text-gray-500 border-t border-gray-100 bg-gray-50">
@@ -352,7 +331,6 @@ function SearchableDropdown({
                     </span>
                   </div>
                 )}
-
                 {/* Show total count if filtered */}
                 {debouncedSearchTerm && filteredOptions.length > 0 && (
                   <div className="px-3 py-2 text-xs text-center text-gray-500 bg-gray-50 border-t border-gray-100">
@@ -370,8 +348,9 @@ function SearchableDropdown({
 
 // const api_startpoint = "http://localhost:5000";
 // const api_startpoint = 'https://lifeapp-api-vv1.vercel.app'
-const api_startpoint = "http://152.42.239.141:5000";
-// const api_startpoint = "https://admin-api.life-lab.org";
+// const api_startpoint = "http://152.42.239.141:5000";
+// const api_startpoint = "http://152.42.239.141:5000";
+const api_startpoint = "https://admin-api.life-lab.org";
 
 export default function StudentDashboard() {
   const [selectedVisionAcceptance, setSelectedVisionAcceptance] = useState("");
@@ -382,10 +361,37 @@ export default function StudentDashboard() {
   const [selectedState, setSelectedState] = useState("");
   const [selectedCampaignId, setSelectedCampaignId] = useState("");
 
+  // 👇 NEW: Add Pragya & Jigyasa acceptance filters
+  const [selectedPragyaAcceptance, setSelectedPragyaAcceptance] = useState("");
+  const [selectedJigyasaAcceptance, setSelectedJigyasaAcceptance] =
+    useState("");
+  // 👆 NEW
+
+  // 👇 NEW: Replace old count filters with status+count pattern
+  const [selectedVisionStatus, setSelectedVisionStatus] = useState<string>(""); // e.g., "requested"
+  const [selectedVisionCount, setSelectedVisionCount] = useState<string>("");
+  const [selectedMissionStatus, setSelectedMissionStatus] =
+    useState<string>("");
+  const [selectedMissionCount, setSelectedMissionCount] = useState<string>("");
+  const [selectedJigyasaStatus, setSelectedJigyasaStatus] =
+    useState<string>("");
+  const [selectedJigyasaCount, setSelectedJigyasaCount] = useState<string>("");
+  const [selectedPragyaStatus, setSelectedPragyaStatus] = useState<string>("");
+  const [selectedPragyaCount, setSelectedPragyaCount] = useState<string>("");
+  // 👆 NEW
+
   useEffect(() => {
     async function fetchStudentCount() {
       try {
-        const res = await fetch(`${api_startpoint}/api/total-student-count`);
+        // 👇 FIX: Use POST to match backend expectations & avoid 405/500
+        const res = await fetch(
+          `${api_startpoint}/api/total-student-count-student-dashboard`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({}),
+          }
+        );
         const data = await res.json();
         if (data && data.length > 0) {
           setTotalStudents(data[0].count);
@@ -394,7 +400,6 @@ export default function StudentDashboard() {
         console.error("Error fetching user count:", error);
       }
     }
-
     fetchStudentCount();
   }, []);
 
@@ -409,17 +414,14 @@ export default function StudentDashboard() {
         setStates(JSON.parse(cachedStates));
         return;
       }
-
       setIsStatesLoading(true);
       try {
         const res = await fetch(`${api_startpoint}/api/state_list`);
         const data: { state: string }[] = await res.json();
-
         if (Array.isArray(data)) {
           const stateList = data
             .map((item) => (item.state ? item.state.trim() : ""))
             .filter((state) => state !== ""); // Filter out empty states
-
           setStates(stateList);
           // Cache the results
           sessionStorage.setItem("stateList", JSON.stringify(stateList));
@@ -434,10 +436,8 @@ export default function StudentDashboard() {
         setIsStatesLoading(false);
       }
     }
-
     fetchStates();
   }, []);
-
   useEffect(() => {
     const fetchCampaigns = async () => {
       try {
@@ -457,19 +457,15 @@ export default function StudentDashboard() {
         setCampaigns([]);
       }
     };
-
     fetchCampaigns();
   }, []);
-
   // For city fetching - optimized but independent of state
   const [cities, setCities] = useState<string[]>([]);
   const [isCitiesLoading, setIsCitiesLoading] = useState(false);
   const [selectedCity, setSelectedCity] = useState("");
   const fetchCities = async (state: string) => {
     if (!state) return;
-
     console.log("Fetching cities for state:", state);
-
     setIsCitiesLoading(true);
     try {
       const res = await fetch(`${api_startpoint}/api/city_list_teachers`, {
@@ -477,29 +473,23 @@ export default function StudentDashboard() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ state: state }),
       });
-
       if (!res.ok) {
         throw new Error(`HTTP error! Status: ${res.status}`);
       }
-
       const data = await res.json();
-
       console.log("Raw API Response:", data); // ✅ Check if cities are being received
-
       if (Array.isArray(data) && data.length > 0) {
         const cityList: string[] = data
           .map((city) =>
             typeof city === "string"
               ? city.trim()
               : city.city
-              ? city.city.trim()
-              : ""
+                ? city.city.trim()
+                : ""
           )
           .filter((city) => city !== "");
-
         setCities(cityList);
         sessionStorage.setItem(`cityList_${state}`, JSON.stringify(cityList));
-
         console.log(`✅ Loaded ${cityList.length} cities for ${state}`);
       } else {
         console.warn("⚠ No cities found for state:", state);
@@ -512,7 +502,6 @@ export default function StudentDashboard() {
       setIsCitiesLoading(false);
     }
   };
-
   useEffect(() => {
     if (selectedState) {
       console.log("🟢 State changed to:", selectedState);
@@ -521,15 +510,12 @@ export default function StudentDashboard() {
       fetchCities(selectedState);
     }
   }, [selectedState]);
-
   // above your existing fetchCities...
   const [addCities, setAddCities] = useState<string[]>([]);
   const [isAddCitiesLoading, setIsAddCitiesLoading] = useState(false);
   const fetchAddCities = async (state: string) => {
     if (!state) return;
-
     console.log("Fetching cities for state:", state);
-
     setIsAddCitiesLoading(true);
     try {
       const res = await fetch(`${api_startpoint}/api/city_list_teachers`, {
@@ -537,29 +523,23 @@ export default function StudentDashboard() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ state: state }),
       });
-
       if (!res.ok) {
         throw new Error(`HTTP error! Status: ${res.status}`);
       }
-
       const data = await res.json();
-
       console.log("Raw API Response:", data); // ✅ Check if cities are being received
-
       if (Array.isArray(data) && data.length > 0) {
         const cityList: string[] = data
           .map((city) =>
             typeof city === "string"
               ? city.trim()
               : city.city
-              ? city.city.trim()
-              : ""
+                ? city.city.trim()
+                : ""
           )
           .filter((city) => city !== "");
-
         setAddCities(cityList);
         sessionStorage.setItem(`cityList_${state}`, JSON.stringify(cityList));
-
         console.log(`✅ Loaded ${cityList.length} cities for ${state}`);
       } else {
         console.warn("⚠ No cities found for state:", state);
@@ -572,14 +552,11 @@ export default function StudentDashboard() {
       setIsAddCitiesLoading(false);
     }
   };
-
   const [editCities, setEditCities] = useState<string[]>([]);
   const [isEditCitiesLoading, setIsEditCitiesLoading] = useState(false);
   const fetchEditCities = async (state: string) => {
     if (!state) return;
-
     console.log("Fetching cities for state:", state);
-
     setIsEditCitiesLoading(true);
     try {
       const res = await fetch(`${api_startpoint}/api/city_list_teachers`, {
@@ -587,29 +564,23 @@ export default function StudentDashboard() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ state: state }),
       });
-
       if (!res.ok) {
         throw new Error(`HTTP error! Status: ${res.status}`);
       }
-
       const data = await res.json();
-
       console.log("Raw API Response:", data); // ✅ Check if cities are being received
-
       if (Array.isArray(data) && data.length > 0) {
         const cityList: string[] = data
           .map((city) =>
             typeof city === "string"
               ? city.trim()
               : city.city
-              ? city.city.trim()
-              : ""
+                ? city.city.trim()
+                : ""
           )
           .filter((city) => city !== "");
-
         setEditCities(cityList);
         sessionStorage.setItem(`cityList_${state}`, JSON.stringify(cityList));
-
         console.log(`✅ Loaded ${cityList.length} cities for ${state}`);
       } else {
         console.warn("⚠ No cities found for state:", state);
@@ -622,19 +593,16 @@ export default function StudentDashboard() {
       setIsEditCitiesLoading(false);
     }
   };
-
   // For city fetching - optimized but independent of state
   const [schools, setSchools] = useState<string[]>([]);
   const [isSchoolsLoading, setIsSchoolsLoading] = useState(false);
   const [selectedSchools, setSelectedSchools] = useState<string[]>([]);
-
   useEffect(() => {
     // Key improvement: UseEffect to trigger data fetch when state or city changes
     // Also fetch initially when component loads
     console.log(
       "🔄 Triggering school fetch based on state/city change or initial load"
     );
-
     // Function to fetch schools based on current filters
     async function fetchFilteredSchools() {
       setIsSchoolsLoading(true);
@@ -647,11 +615,9 @@ export default function StudentDashboard() {
         if (selectedCity) {
           filters.city = selectedCity;
         }
-
         // Decide which endpoint to call
         let apiUrl = `${api_startpoint}/api/school_list`; // Default: all schools
         let fetchOptions: RequestInit = { method: "GET" };
-
         // If any filter is active, use the new filtered endpoint
         if (selectedState || selectedCity) {
           apiUrl = `${api_startpoint}/api/schools_by_filters`;
@@ -661,19 +627,15 @@ export default function StudentDashboard() {
             body: JSON.stringify(filters),
           };
         }
-
         console.log(`Fetching schools from: ${apiUrl}`, filters); // Debug log
-
         const res = await fetch(apiUrl, fetchOptions);
         const data: { name: string }[] = await res.json();
-
         if (Array.isArray(data)) {
           // Process data: extract names and filter out empties
           // Using the simpler direct processing as the chunked version was for the large unfiltered list
           const schoolList = data
             .map((item) => (item.name ? item.name.trim() : ""))
             .filter((name) => name !== "");
-
           setSchools(schoolList);
           console.log(`✅ Loaded ${schoolList.length} schools`);
           // Note: Removed caching for simplicity with filtered results.
@@ -689,13 +651,10 @@ export default function StudentDashboard() {
         setIsSchoolsLoading(false);
       }
     }
-
     // Call the fetch function
     fetchFilteredSchools();
-
     // Dependency array: re-run this effect when selectedState or selectedCity changes
   }, [selectedState, selectedCity]);
-
   const [selectedGrade, setSelectedGrade] = useState("");
   const [selectedMissionType, setSelectedMissionType] = useState("");
   const [selectedMissionAcceptance, setSelectedMissionAcceptance] =
@@ -728,6 +687,23 @@ export default function StudentDashboard() {
       vision_acceptance: selectedVisionAcceptance, // Add this
       vision_requested_no: selectedVisionRequestedNo, // Add this
       vision_accepted_no: selectedVisionAcceptedNo, // Add this
+
+      // 👇 NEW: Add new acceptance filters
+      pragya_acceptance: selectedPragyaAcceptance,
+      jigyasa_acceptance: selectedJigyasaAcceptance,
+      // 👆 NEW
+
+      // 👇 NEW: Map status+count to expected backend fields
+      vision_status: selectedVisionStatus,
+      vision_count: selectedVisionCount,
+      mission_status: selectedMissionStatus,
+      mission_count: selectedMissionCount,
+      jigyasa_status: selectedJigyasaStatus,
+      jigyasa_count: selectedJigyasaCount,
+      pragya_status: selectedPragyaStatus,
+      pragya_count: selectedPragyaCount,
+      // 👆 NEW
+
       earn_coins: selectedEarnCoins,
       from_date: selectedFromDate,
       to_date: selectedToDate,
@@ -737,7 +713,6 @@ export default function StudentDashboard() {
       campaign_id: selectedCampaignId || undefined,
     };
     setIsTableLoading(true); // Set loading to true when search starts
-
     try {
       const res = await fetch(
         `${api_startpoint}/api/student_dashboard_search`,
@@ -756,12 +731,10 @@ export default function StudentDashboard() {
       setIsTableLoading(false); // Set loading to false when search completes (success or error)
     }
   };
-
   // Refs for table scrolling functionality
   const tableContainerRef = useRef<HTMLDivElement>(null);
   const [showLeftHint, setShowLeftHint] = useState(false);
   const [showRightHint, setShowRightHint] = useState(true);
-
   // Update scroll hints based on current scroll position
   const updateScrollHints = () => {
     const container = tableContainerRef.current;
@@ -771,18 +744,15 @@ export default function StudentDashboard() {
       setShowRightHint(scrollLeft < scrollWidth - clientWidth - 10);
     }
   };
-
   // Handle scroll events to show/hide scroll hints
   const handleTableScroll = () => {
     updateScrollHints();
   };
-
   // Scroll table horizontally with larger increments and smooth behavior
   const scrollTableHorizontally = (direction: "left" | "right") => {
     if (tableContainerRef.current) {
       const container = tableContainerRef.current;
       const scrollAmount = container.clientWidth * 0.8; // Scroll 80% of viewport width
-
       container.scrollTo({
         left:
           direction === "left"
@@ -790,19 +760,16 @@ export default function StudentDashboard() {
             : container.scrollLeft + scrollAmount,
         behavior: "smooth",
       });
-
       // Update hints after scroll
       setTimeout(updateScrollHints, 300);
     }
   };
-
   // Update scroll hints when data changes
   useEffect(() => {
     setTimeout(() => {
       updateScrollHints();
     }, 100);
   }, [tableData]);
-
   // Update scroll hints on window resize
   useEffect(() => {
     window.addEventListener("resize", updateScrollHints);
@@ -815,7 +782,6 @@ export default function StudentDashboard() {
     currentPage * rowsPerPage,
     (currentPage + 1) * rowsPerPage
   );
-
   const handleClear = () => {
     setSelectedState("");
     setSelectedCity("");
@@ -831,29 +797,38 @@ export default function StudentDashboard() {
     setSelectedVisionAcceptance("");
     setSelectedVisionRequestedNo("");
     setSelectedVisionAcceptedNo("");
+
+    // 👇 NEW: Clear new filters
+    setSelectedPragyaAcceptance("");
+    setSelectedJigyasaAcceptance("");
+    setSelectedVisionStatus("");
+    setSelectedVisionCount("");
+    setSelectedMissionStatus("");
+    setSelectedMissionCount("");
+    setSelectedJigyasaStatus("");
+    setSelectedJigyasaCount("");
+    setSelectedPragyaStatus("");
+    setSelectedPragyaCount("");
+    // 👆 NEW
+
     setSelectedMobileNo("");
     setInputCode("");
     setSelectedSchoolCode([]);
     setSelectedCampaignId("");
     setTableData([]);
   };
-
   // Add this function in your schoolDashboard component before the return statement
-
   const exportToCSV = () => {
     // Return early if there's no data to export
     if (tableData.length === 0) {
       alert("No data to export. Please perform a search first.");
       return;
     }
-
     try {
       // Get all the headers (keys) from the first data row
       const headers = Object.keys(tableData[0]);
-
       // Create CSV header row
       let csvContent = headers.join(",") + "\n";
-
       // Add data rows
       tableData.forEach((row) => {
         const values = headers.map((header) => {
@@ -861,21 +836,16 @@ export default function StudentDashboard() {
             row[header] === null || row[header] === undefined
               ? ""
               : row[header];
-
           // Handle values that contain commas, quotes, or newlines
           const escapedValue = String(cellValue).replace(/"/g, '""');
-
           // Wrap in quotes to handle special characters
           return `"${escapedValue}"`;
         });
-
         csvContent += values.join(",") + "\n";
       });
-
       // Create a blob and download link
       const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
       const url = URL.createObjectURL(blob);
-
       // Create a temporary link element and trigger the download
       const link = document.createElement("a");
       link.setAttribute("href", url);
@@ -884,7 +854,6 @@ export default function StudentDashboard() {
         `student_data_export_${new Date().toISOString().slice(0, 10)}.csv`
       );
       link.style.visibility = "hidden";
-
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -893,7 +862,6 @@ export default function StudentDashboard() {
       alert("An error occurred while exporting data. Please try again.");
     }
   };
-
   // ````````````````` ADD MODAL ``````````````````````````````````````````
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [newStudent, setNewStudent] = useState({
@@ -912,12 +880,10 @@ export default function StudentDashboard() {
   });
   const [addError, setAddError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
-
   // Handler for form field changes
   const handleNewChange = (field: string, value: string) => {
     setNewStudent((s) => ({ ...s, [field]: value }));
   };
-
   // Submit “Add Student”
   const handleAddStudent = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -954,7 +920,6 @@ export default function StudentDashboard() {
       setAdding(false);
     }
   };
-
   useEffect(() => {
     if (newStudent.state) {
       // clear out any previously selected city in the modal:
@@ -962,14 +927,12 @@ export default function StudentDashboard() {
       fetchAddCities(newStudent.state);
     }
   }, [newStudent.state]);
-
   // inside your modal component:
   // Inside Add Student Modal section
   const [schoolOptions, setSchoolOptions] = useState<
     { id: string; name: string; code: string }[]
   >([]); // Already exists
   const [isSchoolsAddLoading, setIsSchoolsAddLoading] = useState(false); // Already exists
-
   // Modify this useEffect for Add Student Modal
   useEffect(() => {
     // fetch schools based on selected state and city in the Add modal
@@ -989,7 +952,6 @@ export default function StudentDashboard() {
         if (params.toString()) {
           url += `?${params.toString()}`;
         }
-
         const res = await fetch(url);
         const data = await res.json();
         // Expect data = [{ id, name, code }, …]
@@ -1001,13 +963,11 @@ export default function StudentDashboard() {
         setIsSchoolsAddLoading(false);
       }
     }
-
     // Load schools when modal opens AND whenever state or city changes in the Add modal
     if (isAddOpen) {
       loadSchoolsForAdd();
     }
   }, [isAddOpen, newStudent.state, newStudent.city]); // Add newStudent.state and newStudent.city as dependencies
-
   useEffect(() => {
     if (newStudent.state || newStudent.city) {
       // Clear school if state or city changes
@@ -1020,13 +980,11 @@ export default function StudentDashboard() {
       }));
     }
   }, [newStudent.state, newStudent.city]); // Depend on both state and city changes
-
   // ````````````````` EDIT MODAL ``````````````````````````````````````````
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [editingStudent, setEditingStudent] = useState<any>(null);
   const [editError, setEditError] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
-
   // Open the modal, prefill form
   const openEdit = (row: any) => {
     setEditingStudent({
@@ -1046,12 +1004,10 @@ export default function StudentDashboard() {
     });
     setIsEditOpen(true);
   };
-
   // Handle field changes
   const handleEditChange = (field: string, value: string) => {
     setEditingStudent((s: any) => ({ ...s, [field]: value }));
   };
-
   // Submit edit
   const handleEditSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1074,7 +1030,6 @@ export default function StudentDashboard() {
       setEditing(false);
     }
   };
-
   useEffect(() => {
     // Only fire when we actually have an editingStudent with a state
     if (editingStudent?.state) {
@@ -1084,13 +1039,11 @@ export default function StudentDashboard() {
       fetchEditCities(editingStudent.state);
     }
   }, [editingStudent?.state]);
-
   // Inside Edit Student Modal section
   const [schoolEditOptions, setSchoolEditOptions] = useState<
     { id: string; name: string; code: string }[]
   >([]); // Already exists
   const [isSchoolsEditLoading, setIsSchoolsEditLoading] = useState(false); // Already exists
-
   // Modify this useEffect for Edit Student Modal
   useEffect(() => {
     // fetch schools based on selected state and city in the Edit modal
@@ -1111,7 +1064,6 @@ export default function StudentDashboard() {
         if (params.toString()) {
           url += `?${params.toString()}`;
         }
-
         const res = await fetch(url);
         const data = await res.json();
         // Expect data = [{ id, name, code }, …]
@@ -1123,13 +1075,11 @@ export default function StudentDashboard() {
         setIsSchoolsEditLoading(false);
       }
     }
-
     // Load schools when modal opens AND whenever state or city changes in the Edit modal
     if (isEditOpen) {
       loadSchoolsForEdit();
     }
   }, [isEditOpen, editingStudent?.state, editingStudent?.city]); // Add editingStudent?.state and editingStudent?.city as dependencies
-
   // Ensure school fields are cleared when state or city changes in Edit modal
   // You might already have a useEffect for state changing city, modify it or add:
   useEffect(() => {
@@ -1148,7 +1098,6 @@ export default function StudentDashboard() {
       // This might be handled by the onChange logic resetting school_name, but clearing it here ensures consistency.
     }
   }, [editingStudent?.state, editingStudent?.city]); // Depend on both state and city changes
-
   // ````````````````` DELETE MODAL ``````````````````````````````````````````
   // Delete modal state
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
@@ -1158,14 +1107,12 @@ export default function StudentDashboard() {
   } | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
-
   // Open the delete modal
   const openDelete = (row: any) => {
     setDeletingStudent({ id: row.id, name: row.name });
     setDeleteError(null);
     setIsDeleteOpen(true);
   };
-
   // Perform the delete
   const handleDelete = async () => {
     if (!deletingStudent) return;
@@ -1187,7 +1134,6 @@ export default function StudentDashboard() {
       setDeleting(false);
     }
   };
-
   const [chartOptions, setChartOptions] = useState<any>(null);
   const [geoData, setGeoData] = useState<DemographData[]>([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -1195,10 +1141,8 @@ export default function StudentDashboard() {
   useEffect(() => {
     // Load Highcharts on client-side only
     // const HighchartsLoaded = require('highcharts/highmaps');
-
     const fetchData = async () => {
       const HighchartsLoaded = await import("highcharts/highmaps");
-
       setHighchartsLib(HighchartsLoaded);
       try {
         // Fetch India TopoJSON map
@@ -1206,21 +1150,19 @@ export default function StudentDashboard() {
           // "https://code.highcharts.com/mapdata/countries/in/custom/in-all-andaman-and-nicobar.topo.json"
           "https://code.highcharts.com/mapdata/countries/in/custom/in-all-disputed.topo.json"
         );
-
         const topology = await topoResponse.json();
-
         // Fetch state-wise student count from API
         const apiResponse = await fetch(
-          `${api_startpoint}/api/demograph-students`,
+          `${api_startpoint}/api/demograph-students-dashboard`,
           {
             method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({}),
           }
         );
         const apiData: { count: string; state: string }[] =
           await apiResponse.json();
-
         setGeoData(apiData); // Store API data for debugging or future use
-
         // Map API state names to Highcharts' region keys
         const stateMappings: Record<string, string> = {
           "Tamil Nadu": "tamil nadu", // Tamil Nadu gets "in-tn"
@@ -1262,7 +1204,6 @@ export default function StudentDashboard() {
           Tripura: "tripura",
           "Andaman and Nicobar Islands": "andaman and nicobar",
         };
-
         // Transform API data into Highcharts format
         const chartData: DemographChartdata[] = apiData
           .map((item) => ({
@@ -1270,7 +1211,6 @@ export default function StudentDashboard() {
             value: Math.max(parseInt(item.count, 10), 1), // Ensure a minimum value of 1
           }))
           .filter((item) => item.code);
-
         // Set up the chart options
         const options = {
           chart: {
@@ -1325,17 +1265,14 @@ export default function StudentDashboard() {
             },
           ],
         };
-
         setChartOptions(options);
       } catch (error) {
         console.error("Error fetching data:", error);
         setErrorMessage("An error occurred while loading the chart.");
       }
     };
-
     fetchData();
   }, []);
-
   const [studentsByGrade, setStudentsByGrade] = useState<StudentsByGrade[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -1352,14 +1289,12 @@ export default function StudentDashboard() {
           throw new Error("Failed to fetch students by grade");
         }
         const data: StudentsByGrade[] = await response.json();
-
         // Sort the data by grade, handling null last
         const sortedData = data.sort((a, b) => {
           if (a.grade === null) return 1;
           if (b.grade === null) return -1;
           return (a.grade as number) - (b.grade as number);
         });
-
         setStudentsByGrade(sortedData);
         setIsLoading(false);
       } catch (err) {
@@ -1369,14 +1304,11 @@ export default function StudentDashboard() {
         setIsLoading(false);
       }
     };
-
     fetchStudentsByGrade();
   }, []);
-
   // State for modals
   const [showDemographicsModal, setShowDemographicsModal] = useState(false);
   const [showGradeModal, setShowGradeModal] = useState(false);
-
   const [showChallengesModal, setShowChallengesModal] = useState(false);
   const [challengesData, setChallengesData] = useState<
     challengesCompletedData[]
@@ -1406,21 +1338,22 @@ export default function StudentDashboard() {
     };
     fetchChallengesData();
   }, []);
-
   const [totalPointsEarned, setTotalPointsEarned] = useState<number>(0);
   useEffect(() => {
     async function fetchTotalPointsEarned() {
       try {
-        const res = await fetch(`${api_startpoint}/api/total-points-earned`, {
-          method: "POST",
-        });
-
+        const res = await fetch(
+          `${api_startpoint}/api/total-points-earned-in-students-dashboard`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({}),
+          }
+        );
         if (!res.ok) {
           throw new Error(`HTTP error! status: ${res.status}`);
         }
-
         const data = await res.json();
-
         // Access the total_points directly from the response object
         if (data && typeof data.total_points === "string") {
           setTotalPointsEarned(parseInt(data.total_points));
@@ -1429,17 +1362,20 @@ export default function StudentDashboard() {
         console.error("Error fetching total points:", error);
       }
     }
-
     fetchTotalPointsEarned();
   }, []);
-
   const [totalPointsRedeemed, setTotalPointsRedeemed] = useState<number>(0);
   useEffect(() => {
     async function fetchTotalPointsRedeemed() {
       try {
-        const res = await fetch(`${api_startpoint}/api/total-points-redeemed`, {
-          method: "POST",
-        });
+        const res = await fetch(
+          `${api_startpoint}/api/total-points-redeemed-in-students-dashboard`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({}),
+          }
+        );
         const data = await res.json();
         if (data && data.length > 0) {
           setTotalPointsRedeemed(data[0].total_coins_redeemed);
@@ -1450,7 +1386,6 @@ export default function StudentDashboard() {
     }
     fetchTotalPointsRedeemed();
   }, []);
-
   interface Sessions {
     id: number;
     name: string;
@@ -1461,7 +1396,6 @@ export default function StudentDashboard() {
     description?: string; // Add this line
     date_time: string;
   }
-
   // Fetch sessions from the API endpoint.
   const [sessions, setSessions] = useState<Sessions[]>([]);
   const fetchSessions = () => {
@@ -1483,11 +1417,9 @@ export default function StudentDashboard() {
         setLoading(false);
       });
   };
-
   useEffect(() => {
     fetchSessions();
   }, []);
-
   const [sessionParticipantTotal, setSessionParticipantTotal] =
     useState<number>(0);
   useEffect(() => {
@@ -1509,7 +1441,6 @@ export default function StudentDashboard() {
     }
     fetchSessionParticipantTotal();
   }, []);
-
   const [
     mentorsParticipatedSessionsTotal,
     setMentorsParticipatedSessionsTotal,
@@ -1533,15 +1464,16 @@ export default function StudentDashboard() {
     }
     fetchMentorsParticipatedSessionsTotal();
   }, []);
-
   const [tmcAssignedByTeacher, setTmcAssignedByTeacher] = useState<number>(0);
   useEffect(() => {
     async function fetchTmcAssignedByTeacher() {
       try {
         const res = await fetch(
-          `${api_startpoint}/api/total-missions-completed-assigned-by-teacher`,
+          `${api_startpoint}/api/total-missions-completed-assigned-by-teacher-in-students-dashboard`,
           {
             method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({}),
           }
         );
         const data = await res.json();
@@ -1554,10 +1486,8 @@ export default function StudentDashboard() {
     }
     fetchTmcAssignedByTeacher();
   }, []);
-
   const [currentChallengesPage, setCurrentChallengesPage] = useState(0);
   const rowsPerPageChallenges = 10; // Number of rows per page
-
   const [missionStatusData, setMissionStatusData] = useState<
     MissionStatusData[]
   >([]);
@@ -1567,22 +1497,28 @@ export default function StudentDashboard() {
   );
   const [modalOpen, setModalOpen] = useState<boolean>(false);
   const [grouping, setGrouping] = useState<string>("monthly"); // Default grouping
-
+  const [missionLevel, setMissionLevel] = useState<
+    "all" | "level1" | "level2" | "level3" | "level4"
+  >("all");
   // Key improvement: UseEffect to trigger data fetch when grouping changes
   useEffect(() => {
     if (modalOpen) {
-      fetchMissionStatusData(grouping);
+      fetchMissionStatusData(grouping, missionLevel);
     }
-  }, [grouping, modalOpen]);
-
-  const fetchMissionStatusData = (selectedGrouping: string) => {
+  }, [grouping, missionLevel, modalOpen]);
+  const fetchMissionStatusData = (
+    selectedGrouping: string,
+    selectedLevel: string
+  ) => {
     setLoading(true);
     setMissionStatusError(null);
-
     fetch(`${api_startpoint}/api/mission-status-graph`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ grouping: selectedGrouping }),
+      body: JSON.stringify({
+        grouping: selectedGrouping,
+        level: selectedLevel === "all" ? undefined : selectedLevel,
+      }),
     })
       .then((response) => {
         if (!response.ok) {
@@ -1591,9 +1527,7 @@ export default function StudentDashboard() {
         return response.json();
       })
       .then((data) => {
-        // Improved data transformation
         const groupedData: Record<string, MissionStatusData> = {};
-
         data.data.forEach((entry: any) => {
           const period = entry.period;
           if (!groupedData[period]) {
@@ -1604,8 +1538,6 @@ export default function StudentDashboard() {
               "Mission Approved": 0,
             };
           }
-
-          // Safely map mission status
           switch (entry.mission_status) {
             case "Mission Requested":
               groupedData[period]["Mission Requested"] = entry.count;
@@ -1618,14 +1550,17 @@ export default function StudentDashboard() {
               break;
           }
         });
-
-        // Convert to array and sort
         const sortedData = Object.values(groupedData).sort((a, b) => {
-          const [yearA, weekA] = a.period.split("-").map(Number);
-          const [yearB, weekB] = b.period.split("-").map(Number);
-          return yearA !== yearB ? yearA - yearB : weekA - weekB;
+          // Handle 'Lifetime' or non-split periods safely
+          if (a.period === "Lifetime") return -1;
+          if (b.period === "Lifetime") return 1;
+          const partsA = a.period.split("-").map(Number);
+          const partsB = b.period.split("-").map(Number);
+          for (let i = 0; i < Math.min(partsA.length, partsB.length); i++) {
+            if (partsA[i] !== partsB[i]) return partsA[i] - partsB[i];
+          }
+          return partsA.length - partsB.length;
         });
-
         setMissionStatusData(sortedData);
         setLoading(false);
       })
@@ -1634,7 +1569,6 @@ export default function StudentDashboard() {
         setLoading(false);
       });
   };
-
   const MissionStatusChartOptions = {
     title: {
       text: "Mission Status Over Time",
@@ -1663,6 +1597,12 @@ export default function StudentDashboard() {
         // Rotate labels for better readability
         rotate: grouping === "daily" ? 45 : 0,
         interval: 0, // Show all labels
+        formatter: (val: string) => formatWeeklyXAxisLabel(val, grouping),
+        rich: {
+          a: { fontWeight: "bold", fontSize: 11, lineHeight: 16 },
+          b: { fontSize: 10, color: "#666", lineHeight: 14 },
+        },
+        margin: 20,
       },
     },
     yAxis: {
@@ -1704,16 +1644,13 @@ export default function StudentDashboard() {
       },
     ],
   };
-
   const handleModalOpen = () => {
-    fetchMissionStatusData(grouping);
+    fetchMissionStatusData(grouping, missionLevel);
     setModalOpen(true);
   };
-
   const handleModalClose = () => {
     setModalOpen(false);
   };
-
   // State for the quiz data, loading indicator, modal visibility and pagination
   const [quizData, setQuizData] = useState<any[]>([]);
   const [isQuizLoading, setIsQuizLoading] = useState<boolean>(false);
@@ -1721,7 +1658,6 @@ export default function StudentDashboard() {
     useState<boolean>(false);
   const [currentQuizPage, setCurrentQuizPage] = useState<number>(0);
   const rowsPerPageQuiz = 10;
-
   // Fetch quiz data (with count, subject_title, level_title) from API
   useEffect(() => {
     async function fetchQuizData() {
@@ -1743,10 +1679,8 @@ export default function StudentDashboard() {
     }
     fetchQuizData();
   }, [api_startpoint]);
-
   // Function to calculate the total count of quizzes
   const totalQuiz = quizData.reduce((sum, row) => sum + Number(row.count), 0);
-
   // Paginate the quiz data
   const paginatedQuizData = quizData.slice(
     currentQuizPage * rowsPerPageQuiz,
@@ -1766,15 +1700,12 @@ export default function StudentDashboard() {
   // 1) Define the exact keys:
   type Level = "level1" | "level2" | "level3" | "level4";
   type FilterLevel = Level | "all";
-
   // 2) Keep a single selectedLevel in state
   const [selectedLevel, setSelectedLevel] = useState<FilterLevel>("all");
-
   // 3) Derive the array you’ll actually send & chart from it
   const allLevels: Level[] = ["level1", "level2", "level3", "level4"];
   const levelsToFetch: Level[] =
     selectedLevel === "all" ? allLevels : [selectedLevel];
-
   useEffect(() => {
     setLoadingLevel(true);
     fetch(`${api_startpoint}/api/student-count-by-level-over-time`, {
@@ -1797,14 +1728,11 @@ export default function StudentDashboard() {
       .catch(console.error)
       .finally(() => setLoadingLevel(false));
   }, [groupingLevel, selectedLevel]);
-
   // Fetch new data whenever the grouping changes.
   // useEffect(() => {
   //   fetchDataLevelOverTime(groupingLevel);
   // }, [groupingLevel]);
-
   // Prepare the legend – here fixed order for levels.
-
   // 2) Tell TS that your color map only ever has those keys:
   const levelColors: Record<Level, string> = {
     level1: "#1E3A8A",
@@ -1819,32 +1747,28 @@ export default function StudentDashboard() {
     level3_count: number;
     level4_count: number;
   }
-
   const seriesData = levelsToFetch.map((level) => ({
     name:
       level === "level1"
         ? "Level 1: Grade 1–5"
         : level === "level2"
-        ? "Level 2: Grade 6+"
-        : level === "level3"
-        ? "Level 3: Grade 7+"
-        : "Level 4: Grade 8+",
+          ? "Level 2: Grade 6+"
+          : level === "level3"
+            ? "Level 3: Grade 7+"
+            : "Level 4: Grade 8+",
     type: "bar" as const,
     stack: "total" as const,
     data: EchartDataLevel.map((item) => item[`${level}_count`] || 0),
     itemStyle: { color: levelColors[level] },
   }));
-
   // 2) Generate the legend labels from your series names:
   const legendData = seriesData.map((s) => s.name);
-
   // 1) After you’ve built `seriesData`, compute the total for each period:
   const totalCountsLevel = EchartDataLevel.map((item) =>
     [item.level1_count, item.level2_count, item.level3_count, item.level4_count]
       .map((v) => Number(v))
       .reduce((sum, val) => sum + val, 0)
   );
-
   const totalSeriesCountLevel = {
     name: "Total",
     type: "bar",
@@ -1866,7 +1790,6 @@ export default function StudentDashboard() {
     emphasis: { disabled: true },
     z: -1, // render behind your colored stacks
   };
-
   // ECharts option configuration.
   const EchartLevelOption = {
     title: {
@@ -1893,7 +1816,15 @@ export default function StudentDashboard() {
       type: "category",
       data: EchartDataLevel.map((item) => item.period),
       boundaryGap: groupingLevel === "lifetime" ? true : false,
-      axisLabel: { rotate: groupingLevel === "daily" ? 45 : 0 },
+      axisLabel: {
+        rotate: groupingLevel === "daily" ? 45 : 0,
+        formatter: (val: string) => formatWeeklyXAxisLabel(val, groupingLevel),
+        rich: {
+          a: { fontWeight: "bold", fontSize: 11, lineHeight: 16 },
+          b: { fontSize: 10, color: "#666", lineHeight: 14 },
+        },
+        margin: 20,
+      },
     },
     yAxis: {
       type: "value",
@@ -1925,7 +1856,6 @@ export default function StudentDashboard() {
   >([]);
   const [pointsMissionLoading, setPointsMissionLoading] =
     useState<boolean>(true);
-
   // 2. Fetch mission‐points over time whenever grouping changes
   useEffect(() => {
     const fetchPoints = async () => {
@@ -1950,7 +1880,6 @@ export default function StudentDashboard() {
     };
     fetchPoints();
   }, [pointsMissionGrouping]);
-
   const pointsMissionCoinSeries = {
     name: "Points",
     type: "bar" as const,
@@ -1958,7 +1887,6 @@ export default function StudentDashboard() {
     barMaxWidth: "50%",
     itemStyle: { color: "#5470C6" },
   };
-
   const totalMissionCoinSeries = {
     name: "Total",
     type: "bar" as const,
@@ -1982,7 +1910,7 @@ export default function StudentDashboard() {
   };
   // 3. Build your ECharts option
   const pointsMissionChartOption = {
-    title: { text: "Mission Points Over Time", left: "center" },
+    title: { text: "Mission Coins Over Time", left: "center" },
     tooltip: {
       trigger: "axis",
       axisPointer: { type: "shadow" },
@@ -1995,6 +1923,13 @@ export default function StudentDashboard() {
       boundaryGap: true,
       axisLabel: {
         rotate: pointsMissionGrouping === "daily" ? 45 : 0,
+        formatter: (val: string) =>
+          formatWeeklyXAxisLabel(val, pointsMissionGrouping),
+        rich: {
+          a: { fontWeight: "bold", fontSize: 11, lineHeight: 16 },
+          b: { fontSize: 10, color: "#666", lineHeight: 14 },
+        },
+        margin: 20,
       },
     },
     yAxis: {
@@ -2013,7 +1948,6 @@ export default function StudentDashboard() {
     },
     series: [pointsMissionCoinSeries, totalMissionCoinSeries],
   };
-
   const [pointsJigyasaGrouping, setPointsJigyasaGrouping] = useState<
     "daily" | "weekly" | "monthly" | "quarterly" | "yearly" | "lifetime"
   >("monthly");
@@ -2022,7 +1956,6 @@ export default function StudentDashboard() {
   >([]);
   const [pointsJigyasaLoading, setPointsJigyasaLoading] =
     useState<boolean>(true);
-
   // 2. Fetch mission‐points over time whenever grouping changes
   useEffect(() => {
     const fetchPoints = async () => {
@@ -2047,7 +1980,6 @@ export default function StudentDashboard() {
     };
     fetchPoints();
   }, [pointsJigyasaGrouping]);
-
   const pointsJigyasaCoinSeries = {
     name: "Points",
     type: "bar" as const,
@@ -2055,7 +1987,6 @@ export default function StudentDashboard() {
     barMaxWidth: "50%",
     itemStyle: { color: "#5470C6" },
   };
-
   const totalJigyasaCoinSeries = {
     name: "Total",
     type: "bar" as const,
@@ -2079,7 +2010,7 @@ export default function StudentDashboard() {
   };
   // 3. Build your ECharts option
   const pointsJigyasaChartOption = {
-    title: { text: "Jigyasa Points Over Time", left: "center" },
+    title: { text: "Jigyasa Coins Over Time", left: "center" },
     tooltip: {
       trigger: "axis",
       axisPointer: { type: "shadow" },
@@ -2092,6 +2023,13 @@ export default function StudentDashboard() {
       boundaryGap: true,
       axisLabel: {
         rotate: pointsJigyasaGrouping === "daily" ? 45 : 0,
+        formatter: (val: string) =>
+          formatWeeklyXAxisLabel(val, pointsJigyasaGrouping),
+        rich: {
+          a: { fontWeight: "bold", fontSize: 11, lineHeight: 16 },
+          b: { fontSize: 10, color: "#666", lineHeight: 14 },
+        },
+        margin: 20,
       },
     },
     yAxis: {
@@ -2117,7 +2055,6 @@ export default function StudentDashboard() {
     { period: string; points: number }[]
   >([]);
   const [pointsPragyaLoading, setPointsPragyaLoading] = useState<boolean>(true);
-
   // 2. Fetch mission‐points over time whenever grouping changes
   useEffect(() => {
     const fetchPoints = async () => {
@@ -2142,7 +2079,6 @@ export default function StudentDashboard() {
     };
     fetchPoints();
   }, [pointsPragyaGrouping]);
-
   const pointsPragyaCoinSeries = {
     name: "Points",
     type: "bar" as const,
@@ -2150,7 +2086,6 @@ export default function StudentDashboard() {
     barMaxWidth: "50%",
     itemStyle: { color: "#5470C6" },
   };
-
   const totalPragyaCoinSeries = {
     name: "Total",
     type: "bar" as const,
@@ -2174,7 +2109,7 @@ export default function StudentDashboard() {
   };
   // 3. Build your ECharts option
   const pointsPragyaChartOption = {
-    title: { text: "Pragya Points Over Time", left: "center" },
+    title: { text: "Pragya Coins Over Time", left: "center" },
     tooltip: {
       trigger: "axis",
       axisPointer: { type: "shadow" },
@@ -2187,6 +2122,13 @@ export default function StudentDashboard() {
       boundaryGap: true,
       axisLabel: {
         rotate: pointsPragyaGrouping === "daily" ? 45 : 0,
+        formatter: (val: string) =>
+          formatWeeklyXAxisLabel(val, pointsPragyaGrouping),
+        rich: {
+          a: { fontWeight: "bold", fontSize: 11, lineHeight: 16 },
+          b: { fontSize: 10, color: "#666", lineHeight: 14 },
+        },
+        margin: 20,
       },
     },
     yAxis: {
@@ -2215,7 +2157,6 @@ export default function StudentDashboard() {
   >([]);
   const [couponRedeemsLoading, setCouponRedeemsLoading] =
     useState<boolean>(true);
-
   // Fetch data on grouping change
   useEffect(() => {
     setCouponRedeemsLoading(true);
@@ -2229,7 +2170,6 @@ export default function StudentDashboard() {
       .catch(console.error)
       .finally(() => setCouponRedeemsLoading(false));
   }, [couponRedeemsGrouping]);
-
   // Main bar series
   const CouponRedeemsSeries = {
     name: "Coins",
@@ -2238,7 +2178,6 @@ export default function StudentDashboard() {
     barMaxWidth: "50%",
     itemStyle: { color: "#FF8C42" },
   };
-
   // Invisible total series for labels
   const totalCouponRedeemsSeries = {
     name: "Total",
@@ -2257,7 +2196,6 @@ export default function StudentDashboard() {
     emphasis: { disabled: true },
     z: -1,
   };
-
   // Format daily labels
   // const formatPeriod = (period: string) => {
   //   if (couponRedeemsGrouping === 'daily') {
@@ -2271,10 +2209,29 @@ export default function StudentDashboard() {
     tooltip: { trigger: "axis", axisPointer: { type: "shadow" } },
     xAxis: {
       type: "category",
-      data: couponRedeemsData.map((d) =>
-        formatPeriod(d.period, couponRedeemsGrouping)
-      ),
-      axisLabel: { rotate: couponRedeemsGrouping === "daily" ? 45 : 0 },
+      data: couponRedeemsData.map((d) => d.period),
+      axisLabel: {
+        // Rotate the main label (e.g., "2024-1") diagonally
+        rotate: 30,
+        // Formatter to show both machine and human-readable labels
+        formatter: (val: string) =>
+          formatWeeklyXAxisLabel(val, couponRedeemsGrouping),
+        // Rich text styling for two-line labels
+        rich: {
+          a: {
+            fontWeight: "bold",
+            fontSize: 11,
+            lineHeight: 16,
+          },
+          b: {
+            fontSize: 10,
+            color: "#666",
+            lineHeight: 14,
+          },
+        },
+        // Increase bottom margin to accommodate two lines
+        margin: 20,
+      },
     },
     yAxis: { type: "value", name: "Coins" },
     dataZoom: [
@@ -2283,7 +2240,6 @@ export default function StudentDashboard() {
     ],
     series: [CouponRedeemsSeries, totalCouponRedeemsSeries],
   };
-
   const missionGroupings = [
     "daily",
     "weekly",
@@ -2312,7 +2268,6 @@ export default function StudentDashboard() {
   const [quizSubjects, setQuizSubjects] = useState<
     Array<{ id: number; title: string }>
   >([]);
-
   // Fetch subjects on component mount
   useEffect(() => {
     const fetchSubjects = async () => {
@@ -2334,7 +2289,6 @@ export default function StudentDashboard() {
     };
     fetchSubjects();
   }, []);
-
   // --------------------- missions completed over time ------------------------------------------
   const [missionGrouping, setMissionGrouping] = useState<string>("daily");
   const [missionData, setMissionData] = useState<any[]>([]);
@@ -2344,7 +2298,6 @@ export default function StudentDashboard() {
     useState<string>("all");
   const [missionCompleteModal, setMissionCompleteModal] =
     useState<boolean>(false);
-
   const missionStatusOptions = [
     { value: "all", label: "All Statuses" },
     { value: "submitted", label: "Submitted" },
@@ -2381,7 +2334,6 @@ export default function StudentDashboard() {
         setMissionLoading(false);
       }
     };
-
     fetchMissionData();
   }, [missionGrouping, missionStatus, selectedMissionSubject]);
   // Robust parser for JSON text fields.
@@ -2403,7 +2355,6 @@ export default function StudentDashboard() {
     }
     return "";
   };
-
   const groupedByPeriod: Record<string, Record<string, number>> = {};
   missionData.forEach((item) => {
     const period = item.period;
@@ -2417,14 +2368,12 @@ export default function StudentDashboard() {
     }
     groupedByPeriod[period][level] += Number(item.count);
   });
-
   // Sorted periods for x-axis
   const periods = Object.keys(groupedByPeriod).sort();
   // Unique levels across data
   const uniqueLevels = Array.from(
     new Set(missionData.map((item) => getParsedField(item.level_title)))
   );
-
   // Build series data: for each unique level, for each period, use the count (or 0 if missing)
   const series = uniqueLevels.map((level, idx) => ({
     name: level,
@@ -2437,7 +2386,6 @@ export default function StudentDashboard() {
       ],
     },
   }));
-
   // Configure the ECharts option for the mission completed chart.
   // Configure the chart options.
   const missionChartOption = {
@@ -2458,6 +2406,13 @@ export default function StudentDashboard() {
       boundaryGap: true,
       axisLabel: {
         rotate: missionGrouping === "daily" ? 45 : 0,
+        formatter: (val: string) =>
+          formatWeeklyXAxisLabel(val, missionGrouping),
+        rich: {
+          a: { fontWeight: "bold", fontSize: 11, lineHeight: 16 },
+          b: { fontSize: 10, color: "#666", lineHeight: 14 },
+        },
+        margin: 20,
       },
     },
     yAxis: {
@@ -2469,10 +2424,8 @@ export default function StudentDashboard() {
     ],
     series: series,
   };
-
   const transformData = (data: MissionRow[]): TransformedPeriod[] => {
     const result: Record<string, TransformedPeriod> = {};
-
     data.forEach((row) => {
       // Use a fallback if period is null.
       const period = row.period || "Unknown";
@@ -2491,10 +2444,8 @@ export default function StudentDashboard() {
       result[period].__breakdown![level][subject] =
         (result[period].__breakdown![level][subject] || 0) + row.count;
     });
-
     return Object.values(result);
   };
-
   const missionDataTransformed = transformData(missionData);
   const periodsMissionTransformed = missionDataTransformed.map(
     (item) => item.period
@@ -2511,13 +2462,11 @@ export default function StudentDashboard() {
       ],
     },
   }));
-
   // 1) First compute the total for each period:
   const totalCountsMissions = periodsMissionTransformed.map((period) =>
     // groupedByPeriod is your { [period]: { [level]: count }} from before
     Object.values(groupedByPeriod[period]).reduce((sum, v) => sum + v, 0)
   );
-
   // 2) Build your stacked‑bar series as before, then append this “total” series:
   const totalSeries = {
     name: "Total", // you can omit this from your legend.data if you want
@@ -2548,7 +2497,6 @@ export default function StudentDashboard() {
       disabled: true,
     },
   };
-
   // ECharts option with custom tooltip:
   const optionMissionTransformed = {
     title: {
@@ -2587,7 +2535,6 @@ export default function StudentDashboard() {
               ${p.seriesName}: ${p.data}
             </div>
           `;
-
           // Add subject breakdown if available
           const periodData = missionDataTransformed.find(
             (d: any) => d.period === p.axisValue
@@ -2634,6 +2581,16 @@ export default function StudentDashboard() {
         formatPeriod(p, missionGrouping)
       ),
       boundaryGap: true,
+      axisLabel: {
+        rotate: missionGrouping === "daily" ? 45 : 0,
+        formatter: (val: string) =>
+          formatWeeklyXAxisLabel(val, missionGrouping),
+        rich: {
+          a: { fontWeight: "bold", fontSize: 11, lineHeight: 16 },
+          b: { fontSize: 10, color: "#666", lineHeight: 14 },
+        },
+        margin: 20,
+      },
     },
     yAxis: {
       type: "value",
@@ -2647,7 +2604,6 @@ export default function StudentDashboard() {
       totalSeries, // the invisible total bar on top
     ],
   };
-
   // -------------------- Jigyasa completed over time ------------------------------
   const [jigyasaGrouping, setJigyasaGrouping] = useState<string>("daily");
   const [jigyasaData, setJigyasaData] = useState<any[]>([]);
@@ -2688,10 +2644,8 @@ export default function StudentDashboard() {
         setJigyasaLoading(false);
       }
     };
-
     fetchJigyasaData();
   }, [jigyasaGrouping, jigyasaStatus, selectedJigyasaSubject]);
-
   const groupedByPeriodJigyasa: Record<string, Record<string, number>> = {};
   jigyasaData.forEach((item) => {
     const period = item.period;
@@ -2705,13 +2659,11 @@ export default function StudentDashboard() {
     }
     groupedByPeriodJigyasa[period][level] += Number(item.count);
   });
-
   const periodsJigyasa = Object.keys(groupedByPeriodJigyasa).sort();
   // Unique levels across data
   const uniqueLevelsJigyasa = Array.from(
     new Set(jigyasaData.map((item) => getParsedField(item.level_title)))
   );
-
   const seriesJigyasa = uniqueLevelsJigyasa.map((level, idx) => ({
     name: level,
     type: "bar",
@@ -2725,7 +2677,6 @@ export default function StudentDashboard() {
       ],
     },
   }));
-
   const jigyasaChartOption = {
     title: {
       text: "Jigyasa Completed Over Time",
@@ -2744,6 +2695,13 @@ export default function StudentDashboard() {
       boundaryGap: true,
       axisLabel: {
         rotate: jigyasaGrouping === "daily" ? 45 : 0,
+        formatter: (val: string) =>
+          formatWeeklyXAxisLabel(val, jigyasaGrouping),
+        rich: {
+          a: { fontWeight: "bold", fontSize: 11, lineHeight: 16 },
+          b: { fontSize: 10, color: "#666", lineHeight: 14 },
+        },
+        margin: 20,
       },
     },
     yAxis: {
@@ -2755,7 +2713,6 @@ export default function StudentDashboard() {
     ],
     series: seriesJigyasa,
   };
-
   const jigyasaDataTransformed = transformData(jigyasaData);
   const periodsJigyasaTransformed = jigyasaDataTransformed.map(
     (item) => item.period
@@ -2772,13 +2729,11 @@ export default function StudentDashboard() {
       ],
     },
   }));
-
   // 1) First compute the total for each period:
   const totalCountsJigyasa = periodsJigyasaTransformed.map((period) =>
     // groupedByPeriod is your { [period]: { [level]: count }} from before
     Object.values(groupedByPeriodJigyasa[period]).reduce((sum, v) => sum + v, 0)
   );
-
   // 2) Build your stacked‑bar series as before, then append this “total” series:
   const totalSeriesJigyasa = {
     name: "Total", // you can omit this from your legend.data if you want
@@ -2847,7 +2802,6 @@ export default function StudentDashboard() {
               ${p.seriesName}: ${p.data}
             </div>
           `;
-
           // Add subject breakdown if available
           const periodData = jigyasaDataTransformed.find(
             (d: any) => d.period === p.axisValue
@@ -2893,6 +2847,16 @@ export default function StudentDashboard() {
         formatPeriod(p, jigyasaGrouping)
       ),
       boundaryGap: true,
+      axisLabel: {
+        rotate: jigyasaGrouping === "daily" ? 45 : 0,
+        formatter: (val: string) =>
+          formatWeeklyXAxisLabel(val, jigyasaGrouping),
+        rich: {
+          a: { fontWeight: "bold", fontSize: 11, lineHeight: 16 },
+          b: { fontSize: 10, color: "#666", lineHeight: 14 },
+        },
+        margin: 20,
+      },
     },
     yAxis: {
       type: "value",
@@ -2904,9 +2868,7 @@ export default function StudentDashboard() {
     series: [...seriesJigyasaTransformed, totalSeriesJigyasa],
   };
   // -------------------------------------------------------------------------------
-
   // -------------------- Pragya completed over time ------------------------------
-
   const [pragyaGrouping, setPragyaGrouping] = useState<string>("daily");
   const [pragyaData, setPragyaData] = useState<any[]>([]);
   const [pragyaLoading, setPragyaLoading] = useState<boolean>(true);
@@ -2944,10 +2906,8 @@ export default function StudentDashboard() {
         setPragyaLoading(false);
       }
     };
-
     fetchPragyaData();
   }, [pragyaGrouping, pragyaStatus, selectedPragyaSubject]);
-
   const groupedByPeriodPragya: Record<string, Record<string, number>> = {};
   pragyaData.forEach((item) => {
     const period = item.period;
@@ -2961,13 +2921,11 @@ export default function StudentDashboard() {
     }
     groupedByPeriodPragya[period][level] += Number(item.count);
   });
-
   const periodsPragya = Object.keys(groupedByPeriodPragya).sort();
   // Unique levels across data
   const uniqueLevelsPragya = Array.from(
     new Set(pragyaData.map((item) => getParsedField(item.level_title)))
   );
-
   const seriesPragya = uniqueLevelsPragya.map((level, idx) => ({
     name: level,
     type: "bar",
@@ -2981,7 +2939,6 @@ export default function StudentDashboard() {
       ],
     },
   }));
-
   const pragyaChartOption = {
     title: {
       text: "Pragya Completed Over Time",
@@ -3000,6 +2957,12 @@ export default function StudentDashboard() {
       boundaryGap: true,
       axisLabel: {
         rotate: pragyaGrouping === "daily" ? 45 : 0,
+        formatter: (val: string) => formatWeeklyXAxisLabel(val, pragyaGrouping),
+        rich: {
+          a: { fontWeight: "bold", fontSize: 11, lineHeight: 16 },
+          b: { fontSize: 10, color: "#666", lineHeight: 14 },
+        },
+        margin: 20,
       },
     },
     yAxis: {
@@ -3011,7 +2974,6 @@ export default function StudentDashboard() {
     ],
     series: seriesPragya,
   };
-
   const pragyaDataTransformed = transformData(pragyaData);
   const periodsPragyaTransformed = pragyaDataTransformed.map(
     (item) => item.period
@@ -3028,13 +2990,11 @@ export default function StudentDashboard() {
       ],
     },
   }));
-
   // 1) First compute the total for each period:
   const totalCountsPragya = periodsPragyaTransformed.map((period) =>
     // groupedByPeriod is your { [period]: { [level]: count }} from before
     Object.values(groupedByPeriodPragya[period]).reduce((sum, v) => sum + v, 0)
   );
-
   // 2) Build your stacked‑bar series as before, then append this “total” series:
   const totalSeriesPragya = {
     name: "Total", // you can omit this from your legend.data if you want
@@ -3065,7 +3025,6 @@ export default function StudentDashboard() {
       disabled: true,
     },
   };
-
   // ECharts option with custom tooltip:
   const optionPragyaTransformed = {
     title: {
@@ -3104,7 +3063,6 @@ export default function StudentDashboard() {
               ${p.seriesName}: ${p.data}
             </div>
           `;
-
           // Add subject breakdown if available
           const periodData = pragyaDataTransformed.find(
             (d: any) => d.period === p.axisValue
@@ -3150,6 +3108,15 @@ export default function StudentDashboard() {
         formatPeriod(p, pragyaGrouping)
       ),
       boundaryGap: true,
+      axisLabel: {
+        rotate: pragyaGrouping === "daily" ? 45 : 0,
+        formatter: (val: string) => formatWeeklyXAxisLabel(val, pragyaGrouping),
+        rich: {
+          a: { fontWeight: "bold", fontSize: 11, lineHeight: 16 },
+          b: { fontSize: 10, color: "#666", lineHeight: 14 },
+        },
+        margin: 20,
+      },
     },
     yAxis: {
       type: "value",
@@ -3160,10 +3127,8 @@ export default function StudentDashboard() {
     ],
     series: [...seriesPragyaTransformed, totalSeriesPragya],
   };
-
   // -----------------------------------------------------------------------------------------------
   // Create a ref to access the ECharts instance
-
   const chartRef1 = useRef<ReactECharts | null>(null);
   const chartRef2 = useRef<ReactECharts | null>(null);
   const chartRef3 = useRef<ReactECharts | null>(null);
@@ -3183,7 +3148,6 @@ export default function StudentDashboard() {
   const chartRef19 = useRef<ReactECharts | null>(null);
   const chartRef20 = useRef<ReactECharts | null>(null);
   // Fetch data when modal opens or when the selected level changes
-
   const handleDownloadChart = (
     chartRef: React.RefObject<ReactECharts | null>,
     filename: string
@@ -3203,7 +3167,6 @@ export default function StudentDashboard() {
   };
   // Prepare chart options for the bar chart.
   // Note: Adjust to use the correct keys according to your API output.
-
   // ################################ VISIONS ##############################
   interface StatRowVision {
     period: string;
@@ -3227,7 +3190,6 @@ export default function StudentDashboard() {
     campaign_title: string;
     game_type_title: string;
   }
-
   const [statsVision, setStatsVision] = useState<PeriodDataVision[]>([]);
   const [groupingVision, setGroupingVision] = useState("daily");
   const [subjectList, setSubjectList] = useState<any[]>([]);
@@ -3235,6 +3197,9 @@ export default function StudentDashboard() {
   const [assignedBy, setAssignedBy] = useState<"all" | "teacher" | "self">(
     "all"
   );
+  const [visionStatus, setVisionStatus] = useState<
+    "all" | "requested" | "approved" | "rejected"
+  >("all");
   const [visionLoading, setVisionLoading] = useState(false);
   const [visionCompleteModal, setVisionCompleteModal] = useState(false);
   // Fetch subjects
@@ -3247,28 +3212,39 @@ export default function StudentDashboard() {
       .then((res) => res.json())
       .then((data) => setSubjectList(data));
   }, []);
-
-  // Fetch stats whenever filters change
+  // Fetch vision completion statistics whenever filters change
   useEffect(() => {
     setVisionLoading(true);
-    const params = new URLSearchParams({
-      grouping: groupingVision,
-      assigned_by: assignedBy !== "all" ? assignedBy : undefined,
-      subject_id: subjectId ? subjectId.toString() : undefined,
-    } as any);
-
-    fetch(`${api_startpoint}/api/vision-completion-stats?${params}`)
-      .then((res) => res.json())
+    // Build query parameters safely
+    const params = new URLSearchParams();
+    params.append("grouping", groupingVision);
+    if (assignedBy !== "all") params.append("assigned_by", assignedBy);
+    if (subjectId !== null) params.append("subject_id", subjectId.toString());
+    if (visionStatus !== "all") params.append("status", visionStatus);
+    const url = `${api_startpoint}/api/vision-completion-stats-student-dashboard?${params.toString()}`;
+    fetch(url)
+      .then((res) => {
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+        }
+        return res.json();
+      })
       .then((json) => {
-        setStatsVision(json.data);
+        // Validate response structure
+        if (!Array.isArray(json?.data)) {
+          console.warn("Unexpected vision stats response format:", json);
+          setStatsVision([]);
+        } else {
+          setStatsVision(json.data);
+        }
         setVisionLoading(false);
       })
       .catch((err) => {
         console.error("Failed to fetch vision stats:", err);
+        setStatsVision([]); // ensure chart doesn't break
         setVisionLoading(false);
       });
-  }, [groupingVision, subjectId, assignedBy]);
-
+  }, [groupingVision, subjectId, assignedBy, visionStatus]);
   const periodsVision = statsVision.map((d) => d.period);
   const levelsVision = Array.from(
     new Set(statsVision.flatMap((d) => d.levels.map((l) => l.level)))
@@ -3283,12 +3259,10 @@ export default function StudentDashboard() {
       return lvl ? lvl.count : 0;
     }),
   }));
-
   // compute totals per period
   const totalsVision = statsVision.map((d) =>
     d.levels.reduce((sum, lvl) => sum + lvl.count, 0)
   );
-
   // invisible series for total labels
   seriesVision.push({
     name: "Total",
@@ -3328,7 +3302,15 @@ export default function StudentDashboard() {
     xAxis: {
       type: "category",
       data: periodsVision,
-      axisLabel: { rotate: groupingVision === "daily" ? 45 : 0 },
+      axisLabel: {
+        rotate: groupingVision === "daily" ? 45 : 0,
+        formatter: (val: string) => formatWeeklyXAxisLabel(val, groupingVision),
+        rich: {
+          a: { fontWeight: "bold", fontSize: 11, lineHeight: 16 },
+          b: { fontSize: 10, color: "#666", lineHeight: 14 },
+        },
+        margin: 20,
+      },
     },
     yAxis: { type: "value", name: "Users Completed" },
     dataZoom: [
@@ -3337,7 +3319,6 @@ export default function StudentDashboard() {
     ],
     series: seriesVision,
   };
-
   // ----------------- vision score ------------------
   interface ScoreRow {
     period: string;
@@ -3352,7 +3333,9 @@ export default function StudentDashboard() {
   useEffect(() => {
     setVisionScoreLoading(true);
     const params = new URLSearchParams({ grouping: groupingVisionScore });
-    fetch(`${api_startpoint}/api/vision-score-stats?${params}`)
+    fetch(
+      `${api_startpoint}/api/vision-score-stats-student-dashboard?${params}`
+    )
       .then((res) => res.json())
       .then((json) => {
         setVisionScore(json.data);
@@ -3362,18 +3345,25 @@ export default function StudentDashboard() {
         console.error("Failed to fetch vision scores stats:", err);
         setVisionScoreLoading(false);
       });
-  }, [grouping]);
-
+  }, [groupingVisionScore]);
   const periodsVisionScore = VisionScore.map((d) => d.period);
   const scoresVisionScore = VisionScore.map((d) => d.total_score);
-
   const optionVisionScore = {
-    title: { text: "Vision Score Over Time", left: "center" },
+    title: { text: "Vision Coins Over Time", left: "center" },
     tooltip: { trigger: "axis", axisPointer: { type: "line" } },
     xAxis: {
       type: "category",
       data: periodsVisionScore,
-      axisLabel: { rotate: groupingVisionScore === "daily" ? 45 : 0 },
+      axisLabel: {
+        rotate: groupingVisionScore === "daily" ? 45 : 0,
+        formatter: (val: string) =>
+          formatWeeklyXAxisLabel(val, groupingVisionScore),
+        rich: {
+          a: { fontWeight: "bold", fontSize: 11, lineHeight: 16 },
+          b: { fontSize: 10, color: "#666", lineHeight: 14 },
+        },
+        margin: 20,
+      },
     },
     yAxis: { type: "value", name: "Score" },
     series: [
@@ -3415,9 +3405,7 @@ export default function StudentDashboard() {
     <div className={`page bg-light ${inter.className} font-sans`}>
       {/* Inject CSS styles */}
       <div dangerouslySetInnerHTML={{ __html: tableStyles }} />
-
       <Sidebar />
-
       {/* Main Content */}
       <div className="page-wrapper" style={{ marginLeft: "250px" }}>
         {/* Top Navigation */}
@@ -3443,7 +3431,7 @@ export default function StudentDashboard() {
                 </header> */}
         <div className="page-body">
           <div className="container-xl pt-0 pb-4">
-            {/* Metrics Grid */}
+            {/* Combined Metrics Grid */}
             <div className="row g-4 mb-4">
               {[
                 {
@@ -3452,66 +3440,32 @@ export default function StudentDashboard() {
                   icon: <IconUser />,
                   color: "bg-purple",
                 },
+                // {
+                //   title: "Active Students",
+                //   value: 0,
+                //   icon: <IconUserFilled />,
+                //   color: "bg-teal",
+                // },
+                // {
+                //   title: "Inactive Students",
+                //   value: 0,
+                //   icon: <IconUserExclamation />,
+                //   color: "bg-orange",
+                // },
+                // {
+                //   title: "Highest Online User Count",
+                //   value: 0,
+                //   icon: <IconUserScan />,
+                //   color: "bg-blue",
+                // },
                 {
-                  title: "Active Students",
-                  value: 0,
-                  icon: <IconUserFilled />,
-                  color: "bg-teal",
-                },
-                {
-                  title: "Inactive Students",
-                  value: 0,
-                  icon: <IconUserExclamation />,
-                  color: "bg-orange",
-                  suffix: "",
-                },
-                {
-                  title: "Highest Online User Count",
-                  value: 0,
-                  icon: <IconUserScan />,
-                  color: "bg-blue",
-                  suffix: "",
-                },
-              ].map((metric, index) => (
-                <div className="col-sm-6 col-lg-3" key={index}>
-                  <div className="card">
-                    <div className="card-body">
-                      <div className="d-flex align-items-center">
-                        {/* <div className={`${metric.color} rounded-circle p-3 text-white`}>
-                                                {React.cloneElement(metric.icon, { size: 24 })}
-                                                </div> */}
-                        <div>
-                          <div className="subheader">{metric.title}</div>
-                          <div className="h1 mb-3">
-                            <NumberFlow
-                              value={metric.value}
-                              suffix={metric.suffix || ""}
-                              className="fw-semi-bold text-dark"
-                              transformTiming={{
-                                endDelay: 6,
-                                duration: 750,
-                                easing: "cubic-bezier(0.42, 0, 0.58, 1)",
-                              }}
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-            {/* Metrics Grid */}
-            <div className="row g-4 mb-4">
-              {[
-                {
-                  title: "Total Points Earned",
+                  title: "Total Coins Earned",
                   value: totalPointsEarned,
                   icon: <IconUser />,
                   color: "bg-purple",
                 },
                 {
-                  title: "Total Points Redeemed",
+                  title: "Total Coins Redeemed",
                   value: totalPointsRedeemed,
                   icon: <IconUserFilled />,
                   color: "bg-teal",
@@ -3523,51 +3477,16 @@ export default function StudentDashboard() {
                   color: "bg-sky-900",
                 },
                 {
-                  title: "Total Vision Score Earned",
+                  title: "Total Vision Coins Earned",
                   value: totalVisionScore,
                   icon: <IconUser />,
                   color: "bg-sky-900",
-                  suffix: "",
                 },
-
-                // { title: 'Highest Online User Count', value: 36987, icon: <IconUserScan />, color: 'bg-blue', suffix: '' },
-              ].map((metric, index) => (
-                <div className="col-sm-6 col-lg-3" key={index}>
-                  <div className="card">
-                    <div className="card-body">
-                      <div className="d-flex align-items-center">
-                        {/* <div className={`${metric.color} rounded-circle p-3 text-white`}>
-                                                {React.cloneElement(metric.icon, { size: 24 })}
-                                                </div> */}
-                        <div>
-                          <div className="subheader">{metric.title}</div>
-                          <div className="h1 mb-3">
-                            <NumberFlow
-                              value={metric.value}
-                              suffix={metric.suffix || ""}
-                              className="fw-semi-bold text-dark"
-                              transformTiming={{
-                                endDelay: 6,
-                                duration: 750,
-                                easing: "cubic-bezier(0.42, 0, 0.58, 1)",
-                              }}
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-            <div className="row g-4 mb-4">
-              {[
                 {
                   title: "Total Participants Joined Mentor Sessions",
                   value: sessionParticipantTotal,
                   icon: <IconUser />,
                   color: "bg-sky-900",
-                  suffix: "",
                 },
                 {
                   title:
@@ -3575,57 +3494,53 @@ export default function StudentDashboard() {
                   value: mentorsParticipatedSessionsTotal,
                   icon: <IconUser />,
                   color: "bg-sky-900",
-                  suffix: "",
                 },
                 {
                   title: "Teacher Assign Mission Completes",
                   value: tmcAssignedByTeacher,
                   icon: <IconUserExclamation />,
                   color: "bg-orange",
-                  suffix: "",
                 },
                 {
                   title: "Total Sessions Created by Mentors",
                   value: sessions.length,
                   icon: <IconUser />,
                   color: "bg-blue",
-                  suffix: "",
                 },
                 {
                   title: "Total Teacher Assigned Vision Completes",
                   value: totalTeacherAssignedVisionCompletes,
                   icon: <IconUser />,
                   color: "bg-blue",
-                  suffix: "",
                 },
-              ].map((metric, index) => (
-                <div className="col-sm-6 col-lg-3" key={index}>
-                  <div className="card">
-                    <div className="card-body">
-                      <div className="d-flex align-items-center">
-                        {/* <div className={`${metric.color} rounded-circle p-3 text-white`}>
-                                                {React.cloneElement(metric.icon, { size: 24 })}
-                                                </div> */}
-                        <div>
-                          <div className="subheader">{metric.title}</div>
-                          <div className="h1 mb-3">
-                            <NumberFlow
-                              value={metric.value}
-                              suffix={metric.suffix || ""}
-                              className="fw-semi-bold text-dark"
-                              transformTiming={{
-                                endDelay: 6,
-                                duration: 750,
-                                easing: "cubic-bezier(0.42, 0, 0.58, 1)",
-                              }}
-                            />
+              ]
+                // Optional: filter out any null/undefined if you use conditional logic later
+                .filter(Boolean)
+                .map((metric, index) => (
+                  <div className="col-sm-6 col-lg-3" key={index}>
+                    <div className="card">
+                      <div className="card-body">
+                        <div className="d-flex align-items-center">
+                          <div>
+                            <div className="subheader">{metric.title}</div>
+                            <div className="h1 mb-3">
+                              <NumberFlow
+                                value={metric.value}
+                                // suffix={metric.suffix || ""}
+                                className="fw-semi-bold text-dark"
+                                transformTiming={{
+                                  endDelay: 6,
+                                  duration: 750,
+                                  easing: "cubic-bezier(0.42, 0, 0.58, 1)",
+                                }}
+                              />
+                            </div>
                           </div>
                         </div>
                       </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                ))}
             </div>
             {/* New Cards for Modal Triggers */}
             <div className="row g-4 mb-4">
@@ -3649,7 +3564,6 @@ export default function StudentDashboard() {
                   </div>
                 </div>
               </div>
-
               <div
                 className="col-sm-4 col-lg-4"
                 onClick={() => setShowDemographicsModal(true)}
@@ -3672,7 +3586,6 @@ export default function StudentDashboard() {
                   </div>
                 </div>
               </div>
-
               <div
                 className="col-sm-4 col-lg-4"
                 onClick={() => setShowChallengesModal(true)}
@@ -3695,7 +3608,6 @@ export default function StudentDashboard() {
                   </div>
                 </div>
               </div>
-
               <div className="col-sm-4 col-lg-4" onClick={handleModalOpen}>
                 <div className="card cursor-pointer hover:shadow-lg transition-shadow">
                   <div className="card-body">
@@ -3928,9 +3840,9 @@ export default function StudentDashboard() {
                         <IconTrophy size={24} />
                       </div>
                       <div>
-                        <div className="subheader">Vision Scores</div>
+                        <div className="subheader">Vision Coins</div>
                         <div className="text-muted">
-                          Click to see Vision Scores Earned Over Time
+                          Click to see Vision Coins Earned Over Time
                         </div>
                       </div>
                     </div>
@@ -3938,7 +3850,6 @@ export default function StudentDashboard() {
                 </div>
               </div>
             </div>
-
             {/* Modals */}
             {/* Mission Status Modal */}
             {modalOpen && (
@@ -3947,12 +3858,11 @@ export default function StudentDashboard() {
                   <h2 className="text-lg font-bold mb-4">
                     Mission Status Analytics
                   </h2>
-
                   {/* Grouping Dropdown */}
                   <select
                     value={grouping}
                     onChange={(e) => setGrouping(e.target.value)}
-                    className="mb-4 p-2 border rounded"
+                    className="mb-2 p-2 border rounded"
                   >
                     <option value="daily">Daily</option>
                     <option value="weekly">Weekly</option>
@@ -3961,18 +3871,26 @@ export default function StudentDashboard() {
                     <option value="yearly">Yearly</option>
                     <option value="lifetime">Lifetime</option>
                   </select>
-
+                  <select
+                    value={missionLevel}
+                    onChange={(e) => setMissionLevel(e.target.value as any)}
+                    className="mb-4 p-2 border rounded"
+                  >
+                    <option value="all">All Levels</option>
+                    <option value="level1">Level 1 (Grades 1–5)</option>
+                    <option value="level2">Level 2 (Grade 6+)</option>
+                    <option value="level3">Level 3 (Grade 7+)</option>
+                    <option value="level4">Level 4 (Grade 8+)</option>
+                  </select>
                   {/* Loading and Error States */}
                   {loading && (
                     <div className="text-center py-4">Loading data...</div>
                   )}
-
                   {missionStatusError && (
                     <div className="text-red-500 text-center py-4">
                       {missionStatusError}
                     </div>
                   )}
-
                   {/* Chart */}
                   {!loading && !missionStatusError && (
                     <ReactECharts
@@ -3980,7 +3898,6 @@ export default function StudentDashboard() {
                       style={{ height: "400px", width: "100%" }}
                     />
                   )}
-
                   {/* Close button */}
                   <button
                     onClick={handleModalClose}
@@ -4085,7 +4002,6 @@ export default function StudentDashboard() {
                 </div>
               </div>
             )}
-
             {/* Demographics Map Modal */}
             {showDemographicsModal && (
               <div
@@ -4175,13 +4091,11 @@ export default function StudentDashboard() {
                             (sum, row) => sum + row.count,
                             0
                           );
-
                           // Paginate the data
                           const paginatedChallengesData = challengesData.slice(
                             currentChallengesPage * rowsPerPageChallenges,
                             (currentChallengesPage + 1) * rowsPerPageChallenges
                           );
-
                           return (
                             <div className="table-responsive">
                               <table className="table table-striped table-hover">
@@ -4212,15 +4126,13 @@ export default function StudentDashboard() {
                                     } catch (error) {
                                       level = row.description;
                                     }
-
                                     const percentage =
                                       totalChallenges > 0
                                         ? (
-                                            (row.count / totalChallenges) *
-                                            100
-                                          ).toFixed(3)
+                                          (row.count / totalChallenges) *
+                                          100
+                                        ).toFixed(3)
                                         : "0.00";
-
                                     return (
                                       <tr key={index}>
                                         <td>{row.la_mission_id}</td>
@@ -4245,14 +4157,12 @@ export default function StudentDashboard() {
                                         {totalChallenges.toLocaleString()}
                                       </strong>
                                     </td>
-
                                     <td>
                                       <strong>100%</strong>
                                     </td>
                                   </tr>
                                 </tfoot>
                               </table>
-
                               {/* Pagination Controls */}
                               <div className="d-flex justify-content-between mt-3">
                                 <button
@@ -4271,7 +4181,7 @@ export default function StudentDashboard() {
                                     Page {currentChallengesPage + 1} of{" "}
                                     {Math.ceil(
                                       challengesData.length /
-                                        rowsPerPageChallenges
+                                      rowsPerPageChallenges
                                     ) || 1}
                                   </span>
                                 </div>
@@ -4280,14 +4190,14 @@ export default function StudentDashboard() {
                                   onClick={() =>
                                     setCurrentChallengesPage((prev) =>
                                       (prev + 1) * rowsPerPageChallenges <
-                                      challengesData.length
+                                        challengesData.length
                                         ? prev + 1
                                         : prev
                                     )
                                   }
                                   disabled={
                                     (currentChallengesPage + 1) *
-                                      rowsPerPageChallenges >=
+                                    rowsPerPageChallenges >=
                                     challengesData.length
                                   }
                                 >
@@ -4312,7 +4222,6 @@ export default function StudentDashboard() {
                 </div>
               </div>
             )}
-
             {/*Total number of quiz submitted by students  in each level for each subject in the Life app*/}
             {/* Modal for Quiz Data */}
             {openQuizTopicLevelModal && (
@@ -4381,11 +4290,10 @@ export default function StudentDashboard() {
                                 const percentage =
                                   totalQuiz > 0
                                     ? (
-                                        (Number(row.count) / totalQuiz) *
-                                        100
-                                      ).toFixed(3)
+                                      (Number(row.count) / totalQuiz) *
+                                      100
+                                    ).toFixed(3)
                                     : "0.00";
-
                                 return (
                                   <tr key={index}>
                                     <td>{subject}</td>
@@ -4465,7 +4373,6 @@ export default function StudentDashboard() {
                 </div>
               </div>
             )}
-
             {modalOpenLevel && (
               <div className="fixed inset-0 flex items-center justify-center z-50 bg-black bg-opacity-50">
                 <div className="bg-white p-6 rounded-lg shadow-lg w-3/4 relative">
@@ -4657,7 +4564,6 @@ export default function StudentDashboard() {
                           ))}
                         </select>
                       </div>
-
                       {/* Mission Completed Chart */}
                       {missionLoading ? (
                         <div className="text-center">
@@ -4778,7 +4684,6 @@ export default function StudentDashboard() {
                           ))}
                         </select>
                       </div>
-
                       {/* Mission Completed Chart */}
                       {jigyasaLoading ? (
                         <div className="text-center">
@@ -4899,7 +4804,6 @@ export default function StudentDashboard() {
                           ))}
                         </select>
                       </div>
-
                       {/* Mission Completed Chart */}
                       {pragyaLoading ? (
                         <div className="text-center">
@@ -5167,7 +5071,6 @@ export default function StudentDashboard() {
                 </div>
               </div>
             )}
-
             {visionCompleteModal && (
               <div className="fixed inset-0 flex items-center justify-center z-50 bg-black bg-opacity-50">
                 <div className="bg-white p-6 rounded-lg shadow-lg w-3/4 relative">
@@ -5182,12 +5085,17 @@ export default function StudentDashboard() {
                         <h3 className="card-title mb-0 fw-semibold">
                           Vision Completes Over Time
                         </h3>
-                        {/* Download button */}
                       </div>
                       <div style={{ marginBottom: "20px" }}>
+                        {/* Grouping Selector */}
+                        <label htmlFor="vision-grouping" className="me-2">
+                          Group by:
+                        </label>
                         <select
+                          id="vision-grouping"
                           value={groupingVision}
                           onChange={(e) => setGroupingVision(e.target.value)}
+                          className="border rounded p-1 me-3"
                         >
                           <option value="daily">Daily</option>
                           <option value="weekly">Weekly</option>
@@ -5196,53 +5104,92 @@ export default function StudentDashboard() {
                           <option value="yearly">Yearly</option>
                           <option value="lifetime">Lifetime</option>
                         </select>
-
+                        {/* Subject Filter */}
+                        <label htmlFor="vision-subject" className="me-2">
+                          Subject:
+                        </label>
                         <select
+                          id="vision-subject"
                           value={subjectId ?? ""}
                           onChange={(e) =>
                             setSubjectId(
                               e.target.value ? Number(e.target.value) : null
                             )
                           }
+                          className="border rounded p-1 me-3"
                         >
                           <option value="">All Subjects</option>
                           {subjectList.map((s) => (
                             <option key={s.id} value={s.id}>
-                              {JSON.parse(s.title).en}
+                              {typeof s.title === "string"
+                                ? JSON.parse(s.title).en
+                                : s.title.en}
                             </option>
                           ))}
                         </select>
-
+                        {/* Assignment Type Filter */}
+                        <label htmlFor="vision-assigned-by" className="me-2">
+                          Assigned by:
+                        </label>
                         <select
+                          id="vision-assigned-by"
                           value={assignedBy}
                           onChange={(e) => setAssignedBy(e.target.value as any)}
+                          className="border rounded p-1 me-3"
                         >
                           <option value="all">All Assignments</option>
                           <option value="self">Self Assigned</option>
                           <option value="teacher">By Teacher</option>
                         </select>
-                        {visionLoading ? (
-                          <div className="text-center">
-                            <div
-                              className="spinner-border text-purple"
-                              role="status"
-                              style={{ width: "8rem", height: "8rem" }}
-                            ></div>
-                          </div>
-                        ) : (
-                          <ReactECharts
-                            ref={chartRef19}
-                            option={optionVision}
-                            style={{ height: "400px", width: "100%" }}
-                          />
-                        )}
+                        {/* Status Filter */}
+                        <label htmlFor="vision-status" className="me-2">
+                          Status:
+                        </label>
+                        <select
+                          id="vision-status"
+                          value={visionStatus}
+                          onChange={(e) =>
+                            setVisionStatus(e.target.value as any)
+                          }
+                          className="border rounded p-1"
+                        >
+                          <option value="all">All Statuses</option>
+                          <option value="requested">Requested</option>
+                          <option value="approved">Approved</option>
+                          <option value="rejected">Rejected</option>
+                        </select>
                       </div>
+                      {/* Loading, Error, or Chart Rendering */}
+                      {visionLoading ? (
+                        <div className="text-center py-4">
+                          <div
+                            className="spinner-border text-purple"
+                            role="status"
+                            style={{ width: "3rem", height: "3rem" }}
+                          >
+                            <span className="visually-hidden">Loading...</span>
+                          </div>
+                          <p className="mt-2 text-muted">
+                            Loading vision data...
+                          </p>
+                        </div>
+                      ) : statsVision.length === 0 ? (
+                        <div className="text-center py-4 text-muted">
+                          No vision completion data available for the selected
+                          filters.
+                        </div>
+                      ) : (
+                        <ReactECharts
+                          ref={chartRef19}
+                          option={optionVision}
+                          style={{ height: "400px", width: "100%" }}
+                        />
+                      )}
                     </div>
                   </div>
                 </div>
               </div>
             )}
-
             {visionScoreModal && (
               <div className="fixed inset-0 flex items-center justify-center z-50 bg-black bg-opacity-50">
                 <div className="bg-white p-6 rounded-lg shadow-lg w-3/4 relative">
@@ -5255,7 +5202,7 @@ export default function StudentDashboard() {
                     <div className="card shadow-sm border-0 h-100">
                       <div className="card-header bg-transparent py-3">
                         <h3 className="card-title mb-0 fw-semibold">
-                          Vision Scores Over Time
+                          Vision Coins Over Time
                         </h3>
                         {/* Download button */}
                       </div>
@@ -5294,7 +5241,6 @@ export default function StudentDashboard() {
                 </div>
               </div>
             )}
-
             <div className="card shadow-sm border-0 mb-4">
               <div className="card-body">
                 <h5 className="card-title mb-4">Search & Filter</h5>
@@ -5337,48 +5283,168 @@ export default function StudentDashboard() {
                     </select>
                   </div>
 
-                  {/* Vision Requested Count */}
+                  {/* 👇 NEW: Add Pragya & Jigyasa Acceptance Filters */}
                   <div className="col-12 col-md-6 col-lg-3">
                     <select
                       className="form-select"
-                      value={selectedVisionRequestedNo}
+                      value={selectedPragyaAcceptance}
                       onChange={(e) =>
-                        setSelectedVisionRequestedNo(e.target.value)
+                        setSelectedPragyaAcceptance(e.target.value)
                       }
                     >
-                      <option value="">Select Vision Requested</option>
-                      {Array.from({ length: 20 }, (_, i) => i + 1).map(
-                        (requesteds) => (
-                          <option
-                            key={requesteds}
-                            value={requesteds.toString()}
-                          >
-                            Requests made - {requesteds}
-                          </option>
-                        )
-                      )}
+                      <option value="">All Pragya</option>
+                      <option value="accepted">Pragya Approved</option>
+                      <option value="rejected">Pragya Rejected</option>
                     </select>
                   </div>
+                  <div className="col-12 col-md-6 col-lg-3">
+                    <select
+                      className="form-select"
+                      value={selectedJigyasaAcceptance}
+                      onChange={(e) =>
+                        setSelectedJigyasaAcceptance(e.target.value)
+                      }
+                    >
+                      <option value="">All Jigyasa</option>
+                      <option value="accepted">Jigyasa Approved</option>
+                      <option value="rejected">Jigyasa Rejected</option>
+                    </select>
+                  </div>
+                  {/* 👆 NEW */}
 
-                  {/* Vision Accepted Count */}
+                  {/* 👇 NEW: Replace old Vision/Mission count dropdowns with status+count pattern */}
+                  {/* Vision Status → Count */}
                   <div className="col-12 col-md-6 col-lg-3">
                     <select
                       className="form-select"
-                      value={selectedVisionAcceptedNo}
-                      onChange={(e) =>
-                        setSelectedVisionAcceptedNo(e.target.value)
-                      }
+                      value={selectedVisionStatus}
+                      onChange={(e) => setSelectedVisionStatus(e.target.value)}
                     >
-                      <option value="">Select Vision Approved</option>
-                      {Array.from({ length: 20 }, (_, i) => i + 1).map(
-                        (approves) => (
-                          <option key={approves} value={approves.toString()}>
-                            Approves made - {approves}
-                          </option>
-                        )
-                      )}
+                      <option value="">Select Vision Status</option>
+                      <option value="requested">Requested</option>
+                      <option value="approved">Approved</option>
+                      <option value="rejected">Rejected</option>
                     </select>
                   </div>
+                  {selectedVisionStatus && (
+                    <div className="col-12 col-md-6 col-lg-3">
+                      <select
+                        className="form-select"
+                        value={selectedVisionCount}
+                        onChange={(e) => setSelectedVisionCount(e.target.value)}
+                      >
+                        <option value="">Select Count</option>
+                        {Array.from({ length: 20 }, (_, i) => i + 1).map(
+                          (n) => (
+                            <option key={n} value={n.toString()}>
+                              {n}
+                            </option>
+                          )
+                        )}
+                      </select>
+                    </div>
+                  )}
+
+                  {/* Mission Status → Count */}
+                  <div className="col-12 col-md-6 col-lg-3">
+                    <select
+                      className="form-select"
+                      value={selectedMissionStatus}
+                      onChange={(e) => setSelectedMissionStatus(e.target.value)}
+                    >
+                      <option value="">Select Mission Status</option>
+                      <option value="requested">Requested</option>
+                      <option value="approved">Approved</option>
+                      <option value="rejected">Rejected</option>
+                    </select>
+                  </div>
+                  {selectedMissionStatus && (
+                    <div className="col-12 col-md-6 col-lg-3">
+                      <select
+                        className="form-select"
+                        value={selectedMissionCount}
+                        onChange={(e) =>
+                          setSelectedMissionCount(e.target.value)
+                        }
+                      >
+                        <option value="">Select Count</option>
+                        {Array.from({ length: 20 }, (_, i) => i + 1).map(
+                          (n) => (
+                            <option key={n} value={n.toString()}>
+                              {n}
+                            </option>
+                          )
+                        )}
+                      </select>
+                    </div>
+                  )}
+
+                  {/* Jigyasa Status → Count */}
+                  <div className="col-12 col-md-6 col-lg-3">
+                    <select
+                      className="form-select"
+                      value={selectedJigyasaStatus}
+                      onChange={(e) => setSelectedJigyasaStatus(e.target.value)}
+                    >
+                      <option value="">Select Jigyasa Status</option>
+                      <option value="requested">Requested</option>
+                      <option value="approved">Approved</option>
+                      <option value="rejected">Rejected</option>
+                    </select>
+                  </div>
+                  {selectedJigyasaStatus && (
+                    <div className="col-12 col-md-6 col-lg-3">
+                      <select
+                        className="form-select"
+                        value={selectedJigyasaCount}
+                        onChange={(e) =>
+                          setSelectedJigyasaCount(e.target.value)
+                        }
+                      >
+                        <option value="">Select Count</option>
+                        {Array.from({ length: 20 }, (_, i) => i + 1).map(
+                          (n) => (
+                            <option key={n} value={n.toString()}>
+                              {n}
+                            </option>
+                          )
+                        )}
+                      </select>
+                    </div>
+                  )}
+
+                  {/* Pragya Status → Count */}
+                  <div className="col-12 col-md-6 col-lg-3">
+                    <select
+                      className="form-select"
+                      value={selectedPragyaStatus}
+                      onChange={(e) => setSelectedPragyaStatus(e.target.value)}
+                    >
+                      <option value="">Select Pragya Status</option>
+                      <option value="requested">Requested</option>
+                      <option value="approved">Approved</option>
+                      <option value="rejected">Rejected</option>
+                    </select>
+                  </div>
+                  {selectedPragyaStatus && (
+                    <div className="col-12 col-md-6 col-lg-3">
+                      <select
+                        className="form-select"
+                        value={selectedPragyaCount}
+                        onChange={(e) => setSelectedPragyaCount(e.target.value)}
+                      >
+                        <option value="">Select Count</option>
+                        {Array.from({ length: 20 }, (_, i) => i + 1).map(
+                          (n) => (
+                            <option key={n} value={n.toString()}>
+                              {n}
+                            </option>
+                          )
+                        )}
+                      </select>
+                    </div>
+                  )}
+                  {/* 👆 NEW */}
 
                   <div className="col-md-3 mb-3">
                     <select
@@ -5396,7 +5462,6 @@ export default function StudentDashboard() {
                       ))}
                     </select>
                   </div>
-
                   <div className="col-12 col-md-6 col-lg-3">
                     <SearchableDropdown
                       options={states}
@@ -5444,45 +5509,15 @@ export default function StudentDashboard() {
                     </select>
                   </div>
 
-                  <div className="col-12 col-md-6 col-lg-3">
-                    <select
-                      className="form-select"
-                      value={selectedMissionRequestedNo}
-                      onChange={(e) =>
-                        setSelectedMissionRequestedNo(e.target.value)
-                      }
-                    >
-                      <option value="">Select Mission Requested</option>
-                      {Array.from({ length: 20 }, (_, i) => i + 1).map(
-                        (requesteds) => (
-                          <option
-                            key={requesteds}
-                            value={requesteds.toString()}
-                          >
-                            Requests made - {requesteds}
-                          </option>
-                        )
-                      )}
-                    </select>
-                  </div>
-                  <div className="col-12 col-md-6 col-lg-3">
-                    <select
-                      className="form-select"
-                      value={selectedMissionAcceptedNo}
-                      onChange={(e) =>
-                        setSelectedMissionAcceptedNo(e.target.value)
-                      }
-                    >
-                      <option value="">Select Mission Approved</option>
-                      {Array.from({ length: 20 }, (_, i) => i + 1).map(
-                        (approves) => (
-                          <option key={approves} value={approves.toString()}>
-                            Approves made - {approves}
-                          </option>
-                        )
-                      )}
-                    </select>
-                  </div>
+                  {/* 👇 NEW: Removed old count dropdowns */}
+                  {/* Removed:
+                    - Vision Requested Count
+                    - Vision Approved Count
+                    - Mission Requested Count
+                    - Mission Approved Count
+                  */}
+                  {/* 👆 NEW */}
+
                   <div className="col-12 col-md-6 col-lg-3">
                     <select
                       className="form-select"
@@ -5496,7 +5531,6 @@ export default function StudentDashboard() {
                       <option value="10000+">10000+ Coins</option>
                     </select>
                   </div>
-
                   {/* Dropdowns & Inputs Row 3 */}
                   {/* <div className="col-12 col-md-6 col-lg-3">
                                         <select className="form-select">
@@ -5533,7 +5567,6 @@ export default function StudentDashboard() {
                       onChange={(e) => setSelectedMobileNo(e.target.value)}
                     />
                   </div>
-
                   {/* Inputs Row 4 */}
                   <div className="col-12 col-md-6 col-lg-3">
                     <input
@@ -5598,7 +5631,6 @@ export default function StudentDashboard() {
                     </div>
                   </div>
                 </div>
-
                 {/* Action Buttons */}
                 <div className="d-flex flex-wrap gap-2 mt-4">
                   <button
@@ -5608,7 +5640,6 @@ export default function StudentDashboard() {
                     <Search className="me-2" size={16} />
                     Search
                   </button>
-
                   <button
                     className="btn btn-warning d-inline-flex align-items-center text-dark"
                     onClick={handleClear}
@@ -5619,7 +5650,6 @@ export default function StudentDashboard() {
                 </div>
               </div>
             </div>
-
             {/* Action Buttons */}
             <div className="d-flex flex-wrap gap-2">
               <button
@@ -5630,7 +5660,6 @@ export default function StudentDashboard() {
                 <Download className="me-2" size={16} />
                 Export
               </button>
-
               <button
                 className="btn btn-success d-inline-flex align-items-center"
                 onClick={() => setIsAddOpen(true)}
@@ -5638,13 +5667,11 @@ export default function StudentDashboard() {
                 <Plus className="me-2" size={16} />
                 Add Student
               </button>
-
               {/* <button className="btn btn-purple d-inline-flex align-items-center text-white" style={{ backgroundColor: '#6f42c1' }}>
                                 <BarChart3 className="me-2" size={16} />
                                 View Graph
                             </button> */}
             </div>
-
             {/* Paginated Results Table */}
             <div className="card shadow-sm border-0 mt-2">
               <div className="card-body">
@@ -5678,24 +5705,21 @@ export default function StudentDashboard() {
                   <div className="table-container">
                     {/* Scroll hints for visual indication */}
                     <button
-                      className={`scroll-hint-left ${
-                        !showLeftHint ? "scroll-hint-hidden" : ""
-                      }`}
+                      className={`scroll-hint-left ${!showLeftHint ? "scroll-hint-hidden" : ""
+                        }`}
                       onClick={() => scrollTableHorizontally("left")}
                       aria-label="Scroll left"
                     >
                       <IconChevronLeft size={24} />
                     </button>
                     <button
-                      className={`scroll-hint-right ${
-                        !showRightHint ? "scroll-hint-hidden" : ""
-                      }`}
+                      className={`scroll-hint-right ${!showRightHint ? "scroll-hint-hidden" : ""
+                        }`}
                       onClick={() => scrollTableHorizontally("right")}
                       aria-label="Scroll right"
                     >
                       <IconChevronRight size={24} />
                     </button>
-
                     {/* Table with sticky headers and smooth scrolling */}
                     <div
                       ref={tableContainerRef}
@@ -5777,7 +5801,6 @@ export default function StudentDashboard() {
                         </tbody>
                       </table>
                     </div>
-
                     {/* Pagination Controls */}
                     <div className="d-flex justify-content-between mt-3">
                       <button
@@ -5815,7 +5838,6 @@ export default function StudentDashboard() {
                 )}
               </div>
             </div>
-
             {/* ───── Add Student Modal ───── */}
             {isAddOpen && (
               <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
@@ -5887,7 +5909,6 @@ export default function StudentDashboard() {
                       />
                     </div>
                   </div>
-
                   {/* Dropdowns: Grade, State, City, School */}
                   <div className="d-flex flex-col gap-2">
                     <div>
@@ -5934,7 +5955,6 @@ export default function StudentDashboard() {
                         isLoading={isAddCitiesLoading}
                       />
                     </div>
-
                     <div>
                       <label className="block text-sm mb-1">School</label>
                       <SearchableDropdown
@@ -5960,7 +5980,6 @@ export default function StudentDashboard() {
                       />
                     </div>
                   </div>
-
                   <div className="d-flex flex-row gap-4 w-[90%]">
                     <input
                       name="school_id"
@@ -5979,7 +5998,6 @@ export default function StudentDashboard() {
                       disabled
                     />
                   </div>
-
                   <div className="flex justify-end gap-2 mt-4">
                     <button
                       type="button"
@@ -6000,7 +6018,6 @@ export default function StudentDashboard() {
                 </form>
               </div>
             )}
-
             {/* ───── Edit Student Modal ───── */}
             {isEditOpen && editingStudent && (
               <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
@@ -6145,7 +6162,6 @@ export default function StudentDashboard() {
                       />
                     </div>
                   </div>
-
                   {/* Optional overrides */}
                   <div className="d-flex flex-row gap-2">
                     <input
@@ -6163,7 +6179,6 @@ export default function StudentDashboard() {
                       disabled
                     />
                   </div>
-
                   <div className="flex justify-end gap-2 mt-4">
                     <button
                       type="button"
@@ -6184,7 +6199,6 @@ export default function StudentDashboard() {
                 </form>
               </div>
             )}
-
             {/* ───── Delete Student Modal ───── */}
             {isDeleteOpen && deletingStudent && (
               <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
@@ -6220,8 +6234,6 @@ export default function StudentDashboard() {
     </div>
   );
 }
-
 function useDebounce(arg0: () => void, arg1: number, arg2: string[]) {
   throw new Error("Function not implemented.");
 }
-
