@@ -256,6 +256,8 @@ export function Sidebar() {
           {openSections.teachers && (
             <div className="space-y-0.5 ml-5">
               <NavItem href="/teachers/dashboard" label="Dashboard" isNested />
+              <NavItem href="/teachers/mission" label="Mission" isNested />
+              <NavItem href="/teachers/vision" label="Vision" isNested />
               <NavItem
                 href="/teachers/coupons_redeemed"
                 label="Coupon Redeemed"

@@ -7,3 +7,7 @@ export type SideNavItem = {
     submenu?: boolean;
     subMenuItems?: SideNavItem[];
   };
+
+export interface UserType {
+    user_type: number;
+}
