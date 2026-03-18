@@ -101,10 +101,16 @@ const NavItem = ({
 };
 
 /* ----------  NEW: tiny hooks & toggle component  ---------- */
+// const api_startpoint = "http://localhost:5000";
+// const api_startpoint = 'https://lifeapp-api-vv1.vercel.app'
+// const api_startpoint = "http://152.42.239.141:5000";
+// const api_startpoint = "http://152.42.239.141:5000";
+const api_startpoint = "https://admin-api.life-lab.org";
+
 const useDbMode = () => {
   const [mode, setMode] = useState<"prod" | "staging">("prod");
   useEffect(() => {
-    fetch("/api/db-mode")
+    fetch(`${api_startpoint}/api/db-mode`)
       .then((r) => r.json())
       .then((d) => setMode(d.mode))
       .catch(() => {});
@@ -117,7 +123,7 @@ const DbToggle = () => {
   const [loading, setLoading] = useState(false);
   const toggle = async () => {
     setLoading(true);
-    await fetch("/api/toggle-db", { method: "POST" });
+    await fetch(`${api_startpoint}/api/toggle-db`, { method: "POST" });
     window.location.reload(); // fresh data from new DB
   };
   return (
@@ -196,7 +202,7 @@ export function Sidebar() {
 
   const handleLogout = async () => {
     try {
-      await fetch("/api/logout", { method: "POST", credentials: "include" });
+      await fetch(`${api_startpoint}/api/logout`, { method: "POST", credentials: "include" });
       router.push("/login");
     } catch (error) {
       console.error("Logout failed", error);

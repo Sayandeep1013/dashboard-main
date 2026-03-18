@@ -22,8 +22,25 @@ import uuid
 import boto3
 import re
 
-CURRENT_DB_MODE = "prod"          # 'prod' | 'staging'
+DB_MODE_FILE = Path(__file__).resolve().parent / "db_mode.json"
 
+def read_db_mode():
+    try:
+        if DB_MODE_FILE.exists():
+            with open(DB_MODE_FILE, "r") as f:
+                data = json.load(f)
+                return data.get("mode", "prod")
+    except Exception as e:
+        # Fallback to prod on read error
+        pass
+    return "prod"
+
+def write_db_mode(mode):
+    try:
+        with open(DB_MODE_FILE, "w") as f:
+            json.dump({"mode": mode}, f)
+    except Exception as e:
+        pass
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -56,7 +73,7 @@ DO_SPACES_ENDPOINT=os.getenv("DO_SPACES_ENDPOINT")
 
 
 def get_db_connection():
-    if CURRENT_DB_MODE == "prod":
+    if read_db_mode() == "prod":
         host = os.getenv("PROD_DB_HOST")
         user = os.getenv("PROD_DB_USER")
         password = os.getenv("PROD_DB_PASSWORD")
@@ -80,13 +97,14 @@ def get_db_connection():
 
 @app.route("/api/db-mode", methods=["GET"])
 def db_mode():
-    return jsonify({"mode": CURRENT_DB_MODE})
+    return jsonify({"mode": read_db_mode()})
 
 @app.route("/api/toggle-db", methods=["POST"])
 def toggle_db():
-    global CURRENT_DB_MODE
-    CURRENT_DB_MODE = "staging" if CURRENT_DB_MODE == "prod" else "prod"
-    return jsonify({"mode": CURRENT_DB_MODE})
+    current = read_db_mode()
+    new_mode = "staging" if current == "prod" else "prod"
+    write_db_mode(new_mode)
+    return jsonify({"mode": new_mode})
 
 @app.route("/api/login", methods=["POST"])
 def admin_login():

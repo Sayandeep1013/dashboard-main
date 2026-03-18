@@ -5,3 +5,4 @@ backend
 .vscode/
 .venv/
 venv/
+db_mode.json
