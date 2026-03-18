@@ -57,17 +57,19 @@ DO_SPACES_ENDPOINT=os.getenv("DO_SPACES_ENDPOINT")
 
 def get_db_connection():
     if CURRENT_DB_MODE == "prod":
-        host = os.getenv("DB_HOST", "139.59.84.157")
-        user = "root"  # Explicitly use root for production
-        password = "LIFELAB@1server"  # Explicit password for production
+        host = os.getenv("PROD_DB_HOST")
+        user = os.getenv("PROD_DB_USER")
+        password = os.getenv("PROD_DB_PASSWORD")
+        port = int(os.getenv("PROD_DB_PORT"))
     else:
-        host = "139.59.16.159"  # Staging host
-        user = "root"  # Explicitly use root for staging
-        password = "LIFELAB@1server"  # Explicit password for staging
+        host = os.getenv("STAGING_DB_HOST")
+        user = os.getenv("STAGING_DB_USER")
+        password = os.getenv("STAGING_DB_PASSWORD")
+        port = int(os.getenv("STAGING_DB_PORT"))
 
     return pymysql.connect(
         host=host,
-        port=int(os.getenv("DB_PORT", 3306)),
+        port=port,
         user=user,
         password=password,
         database=os.getenv("DB_DATABASE", "lifeapp"),
